@@ -4,106 +4,112 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
   <meta name="theme-color" content="#101714">
-  <meta name="description" content="Zygote — Shitcoins. Отбивай монеты, заряжай брейк и сохраняй портфель чистым. Аркадный кунг-фу на очки.">
-  <title>Zygote — Shitcoins</title>
+  <meta name="description" content="Zygote vs Shitcoins. Deflect coins, charge your Break and keep your portfolio clean. A kung-fu score attack arcade game.">
+  <title>Zygote vs Shitcoins</title>
   <link rel="icon" type="image/svg+xml" href="assets/zygote-mark.svg?v=848ab1759936975d">
   <link rel="preload" href="assets/fonts/RussoOne-Regular.ttf?v=bc0abcc660bd8b7a" as="font" type="font/ttf" crossorigin>
   <link rel="preload" href="assets/fonts/GolosText-Variable.ttf?v=17bb58fb69aec2df" as="font" type="font/ttf" crossorigin>
-  <link rel="stylesheet" href="styles.css?v=4444ccce575eaf2a">
+  <link rel="stylesheet" href="styles.css?v=b2a44c6ec884fd7b">
   <script src="assets/motions.js?v=9e90031d490daad4" defer></script>
   <script src="assets/shitcoins.js?v=53c94a3ef9064da9" defer></script>
   <script src="music-loop.js?v=7203b60ec81fee57" defer></script>
-  <script src="fighter.js?v=445e3912b482ba37" defer></script>
+  <script src="i18n.js?v=c5e1e4a1bcb30c38" defer></script>
+  <script src="fighter.js?v=d43c8d98c357a9d7" defer></script>
 </head>
 <body data-phase="loading" data-combo-tier="0">
   <main class="game-app">
     <header class="masthead">
-      <a class="brand" href="./index.html" aria-label="Zygote — Shitcoins, начало">
+      <a class="brand" href="./index.html" aria-label="Zygote vs Shitcoins, начало" data-i18n-aria-label="ui.brandHome">
         <svg class="brand-mark" viewBox="0 0 48 48" aria-hidden="true"><path class="brand-mark-bg" d="m24 2 19 11v22L24 46 5 35V13Z"/><path d="M14 15h20L15 33h19M16 10v5m16 18v5"/></svg>
-        <span class="brand-name">ZYGOTE<span class="brand-caption">SHITCOINS KUNG-FU</span></span>
+        <span class="brand-name">ZYGOTE<span class="brand-caption">VS SHITCOINS</span></span>
       </a>
+      <div class="language-switcher" role="group" aria-label="Язык игры" data-i18n-aria-label="ui.language">
+        <button type="button" data-language="ru" lang="ru" aria-pressed="true" aria-label="Русский" title="Русский">RU</button>
+        <button type="button" data-language="en" lang="en" aria-pressed="false" aria-label="English" title="English">ENG</button>
+        <button type="button" data-language="zh" lang="zh-Hans" aria-pressed="false" aria-label="简体中文" title="简体中文">中文</button>
+      </div>
       <div class="session-tools">
-        <span class="mode-label"><span aria-hidden="true"></span> ДЕРЖИ ПОРТФЕЛЬ ЧИСТЫМ</span>
-        <button class="tool-button" id="pause-button" type="button" aria-label="Пауза, клавиша Escape" title="Пауза · Esc"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M8 5v14M16 5v14"/></svg><span>Пауза</span></button>
-        <button class="tool-button" id="mute-button" type="button" aria-label="Включить или выключить звук, клавиша M" aria-pressed="false" title="Звук · M"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="m11 5-5 4H3v6h3l5 4V5Z"/><path class="sound-wave" d="M15 8a6 6 0 0 1 0 8m3-11a10 10 0 0 1 0 14"/><path class="sound-cross" d="m16 9 6 6m0-6-6 6"/></svg><span>Звук</span></button>
+        <span class="mode-label"><span aria-hidden="true"></span><b data-i18n="ui.keepPortfolio">ДЕРЖИ ПОРТФЕЛЬ ЧИСТЫМ</b></span>
+        <button class="tool-button" id="pause-button" type="button" aria-label="Пауза, клавиша Escape" title="Пауза · Esc" data-i18n-title="ui.pauseTitle"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M8 5v14M16 5v14"/></svg><span data-i18n="ui.pause">Пауза</span></button>
+        <button class="tool-button" id="mute-button" type="button" aria-label="Включить или выключить звук, клавиша M" aria-pressed="false" title="Звук · M" data-i18n-title="ui.soundTitle"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="m11 5-5 4H3v6h3l5 4V5Z"/><path class="sound-wave" d="M15 8a6 6 0 0 1 0 8m3-11a10 10 0 0 1 0 14"/><path class="sound-cross" d="m16 9 6 6m0-6-6 6"/></svg><span data-i18n="ui.sound">Звук</span></button>
       </div>
     </header>
-    <section class="play-area" aria-label="Арена — отбивай Shitcoins слева и справа">
+    <section class="play-area" aria-label="Арена — отбивай Shitcoins слева и справа" data-i18n-aria-label="ui.playArea">
       <div class="arena-frame">
         <div class="arena-stage">
-          <canvas id="arena" width="1280" height="720" aria-label="Игровая арена: Zygote на платформе, Shitcoins летят слева и справа"></canvas>
+          <canvas id="arena" width="1280" height="720" aria-label="Игровая арена: Zygote на платформе, Shitcoins летят слева и справа" data-i18n-aria-label="ui.arena"></canvas>
           <div class="stage-vignette" aria-hidden="true"></div>
-          <div class="hud" aria-label="Счёт и состояние игры">
-            <div class="hud-score"><span class="hud-label">ОЧКИ</span><strong id="score">0</strong>
-              <div class="combo-panel"><span class="combo-counter"><span id="combo">0</span><small>СЕРИЯ</small></span><span class="multiplier" id="multiplier">×1.00</span></div>
+          <div class="hud" aria-label="Счёт и состояние игры" data-i18n-aria-label="ui.hud">
+            <div class="hud-score"><span class="hud-label" data-i18n="ui.score">ОЧКИ</span><strong id="score">0</strong>
+              <div class="combo-panel"><span class="combo-counter"><span id="combo">0</span><small data-i18n="ui.combo">СЕРИЯ</small></span><span class="multiplier" id="multiplier">×1.00</span></div>
               <span class="combo-title" id="combo-title"></span>
             </div>
-            <div class="hud-center"><span class="hud-label">ПОРТФЕЛЬ <b class="portfolio-caption">0 / 3</b></span>
+            <div class="hud-center"><span class="hud-label"><span data-i18n="ui.portfolio">ПОРТФЕЛЬ</span> <b class="portfolio-caption">0 / 3</b></span>
               <div id="portfolio" class="portfolio" role="group" aria-label="Портфель: три пустых слота">
                 <span class="portfolio-slot" data-slot="0" aria-label="Слот 1: пусто"><svg viewBox="0 0 32 32" aria-hidden="true"><path d="M8 9h15v17H6V9l14-4v4M6 14h17m-5 4h7v5h-7z"/><path d="M11 19v4m-2-2h4"/></svg></span>
                 <span class="portfolio-slot" data-slot="1" aria-label="Слот 2: пусто"><svg viewBox="0 0 32 32" aria-hidden="true"><path d="M8 9h15v17H6V9l14-4v4M6 14h17m-5 4h7v5h-7z"/><path d="M11 19v4m-2-2h4"/></svg></span>
                 <span class="portfolio-slot" data-slot="2" aria-label="Слот 3: пусто"><svg viewBox="0 0 32 32" aria-hidden="true"><path d="M8 9h15v17H6V9l14-4v4M6 14h17m-5 4h7v5h-7z"/><path d="M11 19v4m-2-2h4"/></svg></span>
               </div>
-              <span class="tempo">ТЕМП <b id="level">1</b></span>
+              <span class="tempo"><span data-i18n="ui.tempo">ТЕМП</span> <b id="level">1</b></span>
             </div>
-            <div class="hud-best"><span class="hud-label">РЕКОРД</span><strong id="best">0</strong><span class="best-caption">ТВОЯ ПЛАНКА</span></div>
+            <div class="hud-best"><span class="hud-label" data-i18n="ui.best">РЕКОРД</span><strong id="best">0</strong><span class="best-caption" data-i18n="ui.personalBest">ТВОЯ ПЛАНКА</span></div>
           </div>
           <div id="combat-callout" class="combat-callout" aria-live="polite" aria-atomic="true"></div>
           <div id="combo-banner" class="combo-banner" aria-live="polite" aria-atomic="true"><span class="combo-banner-line" aria-hidden="true"></span><strong id="combo-banner-title"></strong><span class="combo-banner-line" aria-hidden="true"></span></div>
           <div class="overlay" id="overlay">
             <div class="menu-card">
-              <p class="menu-eyebrow"><span></span> ZYGOTE / PORTFOLIO DEFENCE</p>
+              <p class="menu-eyebrow"><span></span><b data-i18n="ui.eyebrow">ZYGOTE / ЗАЩИТА ПОРТФЕЛЯ</b></p>
               <h1 id="overlay-title"><em>SHITCOINS</em></h1>
               <p class="menu-copy" id="overlay-copy">Отбивай монеты. Береги портфель.</p>
               <div class="menu-rules">
-                <span><i class="rule-icon rule-light" aria-hidden="true"><svg viewBox="0 0 32 32"><circle cx="16" cy="16" r="11"/><path d="m11 19 4-9 6 3-4 9zM11 19l6 3m-3-6 5 3"/></svg></i><span>МЕЛКИЕ МОНЕТЫ<b>Кулак / ладонь</b></span></span>
-                <span><i class="rule-icon rule-heavy" aria-hidden="true"><svg viewBox="0 0 32 32"><circle cx="16" cy="16" r="13"/><circle cx="16" cy="16" r="10"/><path d="m10 11 6 5-3 7h10v-4h-5l3-7-7-5"/></svg></i><span>КРУПНЫЕ МОНЕТЫ<b>Удары ногами</b></span></span>
+                <span><i class="rule-icon rule-light" aria-hidden="true"><svg viewBox="0 0 32 32"><circle cx="16" cy="16" r="11"/><path d="m11 19 4-9 6 3-4 9zM11 19l6 3m-3-6 5 3"/></svg></i><span><span data-i18n="ui.smallCoins">МЕЛКИЕ МОНЕТЫ</span><b data-i18n="ui.handAttacks">Кулак / ладонь</b></span></span>
+                <span><i class="rule-icon rule-heavy" aria-hidden="true"><svg viewBox="0 0 32 32"><circle cx="16" cy="16" r="13"/><circle cx="16" cy="16" r="10"/><path d="m10 11 6 5-3 7h10v-4h-5l3-7-7-5"/></svg></i><span><span data-i18n="ui.largeCoins">КРУПНЫЕ МОНЕТЫ</span><b data-i18n="ui.kickAttacks">Удары ногами</b></span></span>
               </div>
-              <div class="load-progress" id="load-progress" role="progressbar" aria-label="Загрузка спрайтов" aria-valuemin="0" aria-valuemax="100" aria-valuenow="0"><span></span></div>
-              <button class="primary-button" id="start-button" type="button" disabled><span>В БОЙ</span><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 12h15m-6-6 6 6-6 6"/></svg></button>
-              <button class="primary-button" id="resume-button" type="button"><span>ПРОДОЛЖИТЬ</span><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 12h15m-6-6 6 6-6 6"/></svg></button>
-              <button class="primary-button" id="restart-button" type="button"><span>ЕЩЁ РАУНД</span><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 12h15m-6-6 6 6-6 6"/></svg></button>
-              <p class="menu-note"><b>WASD / IJKL</b><span>или кнопки внизу</span></p>
+              <div class="load-progress" id="load-progress" role="progressbar" aria-label="Загрузка спрайтов" data-i18n-aria-label="ui.loading" aria-valuemin="0" aria-valuemax="100" aria-valuenow="0"><span></span></div>
+              <button class="primary-button" id="start-button" type="button" disabled><span data-i18n="ui.start">В БОЙ</span><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 12h15m-6-6 6 6-6 6"/></svg></button>
+              <button class="primary-button" id="resume-button" type="button"><span data-i18n="ui.resume">ПРОДОЛЖИТЬ</span><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 12h15m-6-6 6 6-6 6"/></svg></button>
+              <button class="primary-button" id="restart-button" type="button"><span data-i18n="ui.restart">ЕЩЁ РАУНД</span><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 12h15m-6-6 6 6-6 6"/></svg></button>
+              <p class="menu-note"><b>WASD / IJKL</b><span data-i18n="ui.touchHint">или кнопки внизу</span></p>
             </div>
           </div>
-          <div class="arena-status"><span class="status-dot" aria-hidden="true"></span><span id="status" aria-live="polite">Собираем движения…</span><span class="status-right">НЕ ПОДДАВАЙСЯ FOMO</span></div>
+          <div class="arena-status"><span class="status-dot" aria-hidden="true"></span><span id="status" aria-live="polite">Собираем движения…</span><span class="status-right" data-i18n="ui.fomo">НЕ ПОДДАВАЙСЯ FOMO</span></div>
         </div>
         <span class="frame-corner corner-tl" aria-hidden="true"></span><span class="frame-corner corner-tr" aria-hidden="true"></span><span class="frame-corner corner-bl" aria-hidden="true"></span><span class="frame-corner corner-br" aria-hidden="true"></span>
       </div>
     </section>
-    <section class="controls" aria-label="Управление персонажем">
+    <section class="controls" aria-label="Управление персонажем" data-i18n-aria-label="ui.controls">
       <div class="direction-group left-group">
-        <div class="direction-label"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M20 12H4m6-6-6 6 6 6"/></svg> ВЛЕВО <span class="direction-line"></span><span class="layout-name">WASD</span></div>
+        <div class="direction-label"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M20 12H4m6-6-6 6 6 6"/></svg><span data-i18n="ui.left">ВЛЕВО</span><span class="direction-line"></span><span class="layout-name">WASD</span></div>
         <div class="move-pad">
-          <button class="move-button legs jumpkick" type="button" data-move="jumpkick" data-side="-1" aria-label="Удар ногой в прыжке влево, клавиша W"><kbd>W</kbd><span>В прыжке</span><svg viewBox="0 0 24 24" aria-hidden="true"><path d="m5 17 6-6 6 1 4-5m-10 4-2-6M4 20l4-1m-1-2 3 3"/><circle cx="13" cy="5" r="2"/></svg></button>
-          <button class="move-button hands punch" type="button" data-move="punch" data-side="-1" aria-label="Кулак влево, клавиша A"><kbd>A</kbd><span>Кулак</span><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M18 8h-5l-2-3H8v4H5v7l4 3h8l3-5-2-6Z"/><path d="M8 9h6m-1-1v4m4-4v4"/></svg></button>
-          <button class="move-button legs kick" type="button" data-move="kick" data-side="-1" aria-label="Обычный удар ногой влево, клавиша S"><kbd>S</kbd><span>Нога</span><svg viewBox="0 0 24 24" aria-hidden="true"><path d="m7 4 6 5-3 7h9v4H6l-1-5 3-5-4-3"/></svg></button>
-          <button class="move-button hands palm" type="button" data-move="palm" data-side="-1" aria-label="Ладонь влево, клавиша D"><kbd>D</kbd><span>Ладонь</span><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M9 12V5m3 7V3m3 9V4m3 9V7M9 9l-3-1-2 2 6 10h6l3-5V9"/></svg></button>
+          <button class="move-button legs jumpkick" type="button" data-move="jumpkick" data-side="-1" data-i18n-aria-label="ui.jumpkickLeft" aria-label="Удар ногой в прыжке влево, клавиша W"><kbd>W</kbd><span data-i18n="ui.jumpkick">В прыжке</span><svg viewBox="0 0 24 24" aria-hidden="true"><path d="m5 17 6-6 6 1 4-5m-10 4-2-6M4 20l4-1m-1-2 3 3"/><circle cx="13" cy="5" r="2"/></svg></button>
+          <button class="move-button hands punch" type="button" data-move="punch" data-side="-1" data-i18n-aria-label="ui.punchLeft" aria-label="Кулак влево, клавиша A"><kbd>A</kbd><span data-i18n="ui.punch">Кулак</span><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M18 8h-5l-2-3H8v4H5v7l4 3h8l3-5-2-6Z"/><path d="M8 9h6m-1-1v4m4-4v4"/></svg></button>
+          <button class="move-button legs kick" type="button" data-move="kick" data-side="-1" data-i18n-aria-label="ui.kickLeft" aria-label="Обычный удар ногой влево, клавиша S"><kbd>S</kbd><span data-i18n="ui.kick">Нога</span><svg viewBox="0 0 24 24" aria-hidden="true"><path d="m7 4 6 5-3 7h9v4H6l-1-5 3-5-4-3"/></svg></button>
+          <button class="move-button hands palm" type="button" data-move="palm" data-side="-1" data-i18n-aria-label="ui.palmLeft" aria-label="Ладонь влево, клавиша D"><kbd>D</kbd><span data-i18n="ui.palm">Ладонь</span><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M9 12V5m3 7V3m3 9V4m3 9V7M9 9l-3-1-2 2 6 10h6l3-5V9"/></svg></button>
         </div>
       </div>
       <div class="center-controls">
         <span class="recovery-label" id="action-note">Заряжай точными ударами</span>
         <div class="recovery-track" aria-hidden="true"><span id="recovery-fill"></span></div>
-        <button class="break-button" type="button" data-move="break" data-side="0" data-ready="false" aria-label="Брейк: круговая зачистка, клавиша Пробел">
+        <button class="break-button" type="button" data-move="break" data-side="0" data-ready="false" data-i18n-aria-label="ui.breakAria" aria-label="Брейк: круговая зачистка, клавиша Пробел">
           <span class="break-charge-track" aria-hidden="true"><span id="break-charge-fill"></span></span>
           <svg class="break-icon" viewBox="0 0 32 32" aria-hidden="true"><path d="m19 3-3 11h10L13 29l3-12H6Z"/><path class="break-icon-ring" d="M5 11a13 13 0 0 1 6-6m16 16a13 13 0 0 1-6 6"/></svg>
-          <span class="break-name">БРЕЙК<kbd>SPACE</kbd></span><small id="break-cooldown">0%</small>
+          <span class="break-name"><span data-i18n="ui.break">БРЕЙК</span><kbd>SPACE</kbd></span><small id="break-cooldown">0%</small>
         </button>
-        <span class="break-hint">ЗАЧИСТКА С ОБЕИХ СТОРОН</span>
+        <span class="break-hint" data-i18n="ui.breakHint">ЗАЧИСТКА С ОБЕИХ СТОРОН</span>
       </div>
       <div class="direction-group right-group">
-        <div class="direction-label"><span class="layout-name">IJKL</span><span class="direction-line"></span> ВПРАВО <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 12h16m-6-6 6 6-6 6"/></svg></div>
+        <div class="direction-label"><span class="layout-name">IJKL</span><span class="direction-line"></span><span data-i18n="ui.right">ВПРАВО</span><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 12h16m-6-6 6 6-6 6"/></svg></div>
         <div class="move-pad">
-          <button class="move-button legs jumpkick" type="button" data-move="jumpkick" data-side="1" aria-label="Удар ногой в прыжке вправо, клавиша I"><kbd>I</kbd><span>В прыжке</span><svg viewBox="0 0 24 24" aria-hidden="true"><path d="m5 17 6-6 6 1 4-5m-10 4-2-6M4 20l4-1m-1-2 3 3"/><circle cx="13" cy="5" r="2"/></svg></button>
-          <button class="move-button hands punch" type="button" data-move="punch" data-side="1" aria-label="Кулак вправо, клавиша J"><kbd>J</kbd><span>Кулак</span><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M18 8h-5l-2-3H8v4H5v7l4 3h8l3-5-2-6Z"/><path d="M8 9h6m-1-1v4m4-4v4"/></svg></button>
-          <button class="move-button legs kick" type="button" data-move="kick" data-side="1" aria-label="Обычный удар ногой вправо, клавиша K"><kbd>K</kbd><span>Нога</span><svg viewBox="0 0 24 24" aria-hidden="true"><path d="m7 4 6 5-3 7h9v4H6l-1-5 3-5-4-3"/></svg></button>
-          <button class="move-button hands palm" type="button" data-move="palm" data-side="1" aria-label="Ладонь вправо, клавиша L"><kbd>L</kbd><span>Ладонь</span><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M9 12V5m3 7V3m3 9V4m3 9V7M9 9l-3-1-2 2 6 10h6l3-5V9"/></svg></button>
+          <button class="move-button legs jumpkick" type="button" data-move="jumpkick" data-side="1" data-i18n-aria-label="ui.jumpkickRight" aria-label="Удар ногой в прыжке вправо, клавиша I"><kbd>I</kbd><span data-i18n="ui.jumpkick">В прыжке</span><svg viewBox="0 0 24 24" aria-hidden="true"><path d="m5 17 6-6 6 1 4-5m-10 4-2-6M4 20l4-1m-1-2 3 3"/><circle cx="13" cy="5" r="2"/></svg></button>
+          <button class="move-button hands punch" type="button" data-move="punch" data-side="1" data-i18n-aria-label="ui.punchRight" aria-label="Кулак вправо, клавиша J"><kbd>J</kbd><span data-i18n="ui.punch">Кулак</span><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M18 8h-5l-2-3H8v4H5v7l4 3h8l3-5-2-6Z"/><path d="M8 9h6m-1-1v4m4-4v4"/></svg></button>
+          <button class="move-button legs kick" type="button" data-move="kick" data-side="1" data-i18n-aria-label="ui.kickRight" aria-label="Обычный удар ногой вправо, клавиша K"><kbd>K</kbd><span data-i18n="ui.kick">Нога</span><svg viewBox="0 0 24 24" aria-hidden="true"><path d="m7 4 6 5-3 7h9v4H6l-1-5 3-5-4-3"/></svg></button>
+          <button class="move-button hands palm" type="button" data-move="palm" data-side="1" data-i18n-aria-label="ui.palmRight" aria-label="Ладонь вправо, клавиша L"><kbd>L</kbd><span data-i18n="ui.palm">Ладонь</span><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M9 12V5m3 7V3m3 9V4m3 9V7M9 9l-3-1-2 2 6 10h6l3-5V9"/></svg></button>
         </div>
       </div>
-      <div class="control-legend"><span><i class="legend-dot light-dot"></i> Мелкие — руками</span><span><i class="legend-dot heavy-dot"></i> Крупные — ногами</span></div>
+      <div class="control-legend"><span><i class="legend-dot light-dot"></i><span data-i18n="ui.lightLegend">Мелкие — руками</span></span><span><i class="legend-dot heavy-dot"></i><span data-i18n="ui.heavyLegend">Крупные — ногами</span></span></div>
     </section>
-    <footer class="footer"><span>ТРИ МОНЕТЫ В ПОРТФЕЛЕ — ТЫ EXIT LIQUIDITY.</span><span><kbd>ESC</kbd> <i>пауза</i><span class="footer-dot">·</span><kbd>M</kbd> <i>звук</i></span></footer>
-    <noscript><p class="noscript">Для игры нужен JavaScript. Включи его в настройках браузера.</p></noscript>
+    <footer class="footer"><span data-i18n="ui.footer">ТРИ МОНЕТЫ В ПОРТФЕЛЕ — ТЫ EXIT LIQUIDITY.</span><span><kbd>ESC</kbd> <i data-i18n="ui.pauseLower">пауза</i><span class="footer-dot">·</span><kbd>M</kbd> <i data-i18n="ui.soundLower">звук</i></span></footer>
+    <noscript><p class="noscript" data-i18n="ui.noscript">Для игры нужен JavaScript. Включи его в настройках браузера.</p></noscript>
   </main>
 </body>
 </html>

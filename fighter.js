@@ -1,4 +1,4 @@
-/* ZYG · Shitcoins. Standalone, dependency-free game and deterministic simulation. */
+/* Zygote vs Shitcoins. Standalone, dependency-free game and deterministic simulation. */
 (function (root) {
   'use strict';
 
@@ -59,7 +59,7 @@
       move = move === 'palms' ? 'palm' : move;
       if (this.phase !== 'playing' || !this.specs[move]) return false;
       if (move === 'break' && !this.breakReady) {
-        this.emit('unavailable', { text: 'БРЕЙК · ' + Math.floor(this.breakCharge) + '% · ЗАРЯЖАЙ УДАРАМИ' }); return false;
+        this.emit('unavailable', { text: 'БРЕЙК · ' + Math.floor(this.breakCharge) + '% · ЗАРЯЖАЙ УДАРАМИ', textKey: 'dynamic.breakUnavailable', textParams: { charge: Math.floor(this.breakCharge) } }); return false;
       }
       if (this.attack || this.recovery > 0) {
         if (queue && !this.attack && this.recovery <= RECOVERY_SECONDS) this.queued = { move, side };
@@ -127,7 +127,7 @@
             if (spec.type !== 'all' && spec.type !== object.type) {
               if (!a.clangIds.has(object.id)) {
                 a.clangIds.add(object.id); object.clang = .2;
-                this.emit('clang', { object: { ...object }, text: object.type === 'heavy' ? 'КРУПНЫЙ — НОГОЙ!' : 'МЕЛКИЙ — РУКАМИ!' });
+                this.emit('clang', { object: { ...object }, text: object.type === 'heavy' ? 'КРУПНЫЙ — НОГОЙ!' : 'МЕЛКИЙ — РУКАМИ!', textKey: object.type === 'heavy' ? 'dynamic.clangHeavy' : 'dynamic.clangLight' });
               }
               continue;
             }
@@ -141,7 +141,7 @@
             this.emit('hit', { object: { ...object }, move: a.move, perfect, points, combo: this.combo,
               multiplier, tier: this.comboTier, breakCharge: this.breakCharge });
             if (this.combo === 10 || this.combo === 25 || this.combo === 50) {
-              this.emit('comboMilestone', { combo: this.combo, tier: this.comboTier, title: this.comboTitle, multiplier });
+              this.emit('comboMilestone', { combo: this.combo, tier: this.comboTier, title: this.comboTitle, textKey: 'combo.' + this.comboTier, multiplier });
             }
           }
         }
@@ -206,7 +206,8 @@
   const coinImages = [], atlases = [], particles = [], floaters = [], reflected = [], impacts = [], captures = [];
   let background = null, renderFrames = 0, shake = 0, damageFlash = 0, inputPulse = 0;
   let last = 0, accumulator = 0, visualTime = 0, audioContext = null, sfxGain = null;
-  let statusText = '', statusUntil = 0, loadingDone = 0, spriteError = false, logoError = false;
+  let statusMessage = null, calloutMessage = null, comboBannerMessage = null;
+  let statusUntil = 0, loadingDone = 0, spriteError = false, logoError = false;
   let hitStop = 0, calloutUntil = 0, comboBannerUntil = 0, breakFlash = 0, hitStopCount = 0;
   const tierColors = ['#95ffda', '#e4f58b', '#7ce8ef', '#e8a2ff'];
   const music = new root.ZYGMusicLoop('assets/music-loop.wav?v=de1885295dd090fd');
@@ -278,8 +279,44 @@
       [790, 1117, 603].forEach((f, i) => tone(f, f * .85, .13, .10, 'triangle', .02 + i * .034));
     } else { noise(.09, .14, object.variant === 2 ? 2500 : 1200, .025); tone(430, 190, .08, .09, 'triangle', .02); }
   }
+  // Keep semantic messages so an active callout or status changes language in place.
+  // Russian fallback also lets the standalone engine/browser QA run without i18n.js.
+  const fallbackText = {
+    'moves.punch': 'УДАР РУКОЙ', 'moves.kick': 'УДАР НОГОЙ', 'moves.palm': 'ДВОЙНАЯ ЛАДОНЬ',
+    'moves.jumpkick': 'УДАР В ПРЫЖКЕ', 'moves.break': 'БРЕЙК · ЗАЧИСТКА',
+    'combo.1': 'НЕ ПОКУПАЮ', 'combo.2': 'АЛМАЗНЫЕ РУКИ', 'combo.3': 'ПОРТФЕЛЬ ЧИСТ',
+    'dynamic.breakUnavailable': 'БРЕЙК · {charge}% · ЗАРЯЖАЙ УДАРАМИ',
+    'dynamic.intro': 'Мелкие — руками. Красные — ногами. Не покупай.', 'dynamic.keepCombo': 'ДЕРЖИ СЕРИЮ',
+    'dynamic.portfolioAria': 'Портфель: {count} из 3. Третья монета завершает раунд.',
+    'dynamic.portfolioCount': '{count} / 3', 'dynamic.slotFilled': 'Слот {slot}: {name}', 'dynamic.slotEmpty': 'Слот {slot}: пусто',
+    'dynamic.breakReady': 'ГОТОВ', 'dynamic.breakPercent': '{charge}%', 'dynamic.recovery': 'БОЕВАЯ СТОЙКА · {seconds} С',
+    'dynamic.neutral': 'НЕЙТРАЛЬ · ГОТОВ К УДАРУ', 'dynamic.queued': 'ПРИЁМ В ОЧЕРЕДИ', 'dynamic.idle': 'ЛОВИ МОМЕНТ. ДЕРЖИ ЦЕНТР.',
+    'dynamic.unmute': 'Включить звук (M)', 'dynamic.mute': 'Выключить звук (M)', 'dynamic.resumeAria': 'Продолжить (Esc)', 'dynamic.pauseAria': 'Пауза (Esc)',
+    'dynamic.loadingTitle': 'СОБИРАЕМ БОЙЦА', 'dynamic.loadingCopy': 'Готовим спрайты и ставим музыку на повтор.',
+    'dynamic.pausedTitle': 'Перекур.', 'dynamic.pausedCopy': 'Enter или Esc — продолжить.',
+    'dynamic.gameoverTitle': 'Ты стал exit liquidity', 'dynamic.gameoverCopy': 'В портфеле 3 Shitcoins. {score} очков. Попробуем без покупок?',
+    'dynamic.menuTitle': 'Zygote vs Shitcoins', 'dynamic.menuCopy': 'Отбивай монеты. Береги портфель.', 'dynamic.assetError': 'Часть изображений не загрузилась. Обнови страницу.',
+    'dynamic.breakClean': 'ПОРТФЕЛЬ ЧИСТ', 'dynamic.breakNoBuy': 'БРЕЙК · НИ ОДНОЙ ПОКУПКИ',
+    'dynamic.perfect': 'В ТОЧКУ', 'dynamic.deflected': 'ОТБИТО', 'dynamic.perfectCharge': 'ТОЧНЫЙ УДАР · +16% К БРЕЙКУ', 'dynamic.deflectedCharge': 'ОТБИТО · +9% К БРЕЙКУ',
+    'dynamic.clangHeavy': 'КРУПНЫЙ — НОГОЙ!', 'dynamic.clangLight': 'МЕЛКИЙ — РУКАМИ!', 'dynamic.clang': 'ЛЯЗГ!', 'dynamic.bought': 'ПОКУПКА В ПОРТФЕЛЕ · {count}/3',
+    'dynamic.kickHint': 'НОГОЙ', 'dynamic.handsHint': 'РУКАМИ', 'dynamic.loadingSprites': 'СОБИРАЕМ СПРАЙТЫ…', 'dynamic.spriteError': 'СПРАЙТЫ НЕ ЗАГРУЗИЛИСЬ',
+    'dynamic.legs': 'НОГИ', 'dynamic.hands': 'РУКИ', 'dynamic.pointsGain': '+{points}', 'dynamic.scoreDigits': '{score}'
+  };
+  function t(key, params = {}) {
+    if (root.ZYG_I18N) return root.ZYG_I18N.t(key, params);
+    return (fallbackText[key] || key).replace(/\{(\w+)\}/g, (_, name) => params[name] === undefined ? '{' + name + '}' : String(params[name]));
+  }
+  const numberFormats = new Map();
+  function number(value, options = {}) {
+    const language = root.ZYG_I18N && root.ZYG_I18N.language || 'ru';
+    const cacheKey = language + JSON.stringify(options);
+    if (!numberFormats.has(cacheKey)) numberFormats.set(cacheKey, new Intl.NumberFormat({ ru: 'ru-RU', en: 'en-US', zh: 'zh-CN' }[language] || 'ru-RU', options));
+    return numberFormats.get(cacheKey).format(value);
+  }
+  function message(key, params = {}) { return { key, params }; }
+  function translated(descriptor) { return descriptor ? t(descriptor.key, descriptor.params) : ''; }
   function setText(id, value) { const node = $(id); if (node && node.textContent !== String(value)) node.textContent = value; }
-  function announce(text, duration = 1.5) { statusText = text; statusUntil = visualTime + duration; }
+  function announce(key, duration = 1.5, params = {}) { statusMessage = message(key, params); statusUntil = visualTime + duration; }
   function save() { try { localStorage.setItem('zyg-junkfu-best', String(sim.best)); savedBest = sim.best; } catch (_) {} }
   function setMute(value) {
     muted = value; music.muted = muted;
@@ -292,7 +329,8 @@
     if (sim.phase === 'loading') return;
     unlockAudio(); sim.start(); particles.length = floaters.length = reflected.length = impacts.length = captures.length = 0;
     accumulator = shake = hitStop = breakFlash = calloutUntil = comboBannerUntil = hitStopCount = 0;
-    announce('Мелкие — руками. Красные — ногами. Не покупай.', 4.5); updateHUD();
+    statusMessage = calloutMessage = comboBannerMessage = null;
+    announce('dynamic.intro', 4.5); updateHUD();
   }
   function pause(value) {
     sim.setPaused(value); accumulator = 0;
@@ -317,6 +355,7 @@
   };
   root.addEventListener('keydown', event => {
     if (event.target && /INPUT|TEXTAREA|SELECT/.test(event.target.tagName)) return;
+    if (event.target && event.target.closest && event.target.closest('button[data-language]') && ['Enter', 'Space'].includes(event.code)) return;
     if (keys[event.code] || ['Enter', 'Escape', 'KeyM'].includes(event.code)) event.preventDefault();
     if (event.repeat) return;
     if (event.code === 'KeyM') { setMute(!muted); return; }
@@ -342,16 +381,16 @@
     document.body.dataset.phase = sim.phase;
     document.body.dataset.comboTier = String(sim.comboTier);
     const overlay = $('overlay'); if (overlay) overlay.hidden = sim.phase === 'playing';
-    setText('score', String(sim.score).padStart(5, '0'));
-    setText('best', String(sim.best).padStart(5, '0'));
-    setText('combo', String(sim.combo).padStart(2, '0'));
-    setText('multiplier', '×' + sim.multiplier.toFixed(2));
-    setText('combo-title', sim.comboTitle || 'ДЕРЖИ СЕРИЮ');
-    setText('level', String(sim.difficulty).padStart(2, '0'));
+    setText('score', t('dynamic.scoreDigits', { score: number(sim.score, { useGrouping: false, minimumIntegerDigits: 5 }) }));
+    setText('best', t('dynamic.scoreDigits', { score: number(sim.best, { useGrouping: false, minimumIntegerDigits: 5 }) }));
+    setText('combo', number(sim.combo, { useGrouping: false, minimumIntegerDigits: 2 }));
+    setText('multiplier', '×' + number(sim.multiplier, { minimumFractionDigits: 2, maximumFractionDigits: 2 }));
+    setText('combo-title', t(sim.comboTier ? 'combo.' + sim.comboTier : 'dynamic.keepCombo'));
+    setText('level', number(sim.difficulty, { useGrouping: false, minimumIntegerDigits: 2 }));
     const portfolio = $('portfolio');
     if (portfolio) {
-      const caption = document.querySelector('.portfolio-caption'); if (caption) caption.textContent = `${sim.portfolio.length} / 3`;
-      portfolio.setAttribute('aria-label', `Портфель: ${sim.portfolio.length} из 3. Третья монета завершает раунд.`);
+      const caption = document.querySelector('.portfolio-caption'); if (caption) caption.textContent = t('dynamic.portfolioCount', { count: sim.portfolio.length });
+      portfolio.setAttribute('aria-label', t('dynamic.portfolioAria', { count: sim.portfolio.length }));
       portfolio.querySelectorAll('.portfolio-slot').forEach((slot, index) => {
         const coin = sim.portfolio[index], entry = coin && coinManifest[coin.variant];
         const capturing = captures.some(c => c.slot === index && c.life > 0);
@@ -362,34 +401,36 @@
           if (!img) { img = document.createElement('img'); slot.appendChild(img); }
           if (img.dataset.variant !== String(coin.variant)) { img.src = entry.src; img.alt = entry.symbol; img.dataset.variant = String(coin.variant); }
           img.style.opacity = capturing ? '0' : '1';
-          slot.setAttribute('aria-label', `Слот ${index + 1}: ${entry.name}`);
+          slot.setAttribute('aria-label', t('dynamic.slotFilled', { slot: index + 1, name: entry.name }));
         } else {
           if (img) img.remove();
-          slot.setAttribute('aria-label', `Слот ${index + 1}: пусто`);
+          slot.setAttribute('aria-label', t('dynamic.slotEmpty', { slot: index + 1 }));
         }
       });
     }
-    setText('break-cooldown', sim.breakReady ? 'ГОТОВ' : Math.floor(sim.breakCharge) + '%');
+    setText('break-cooldown', sim.breakReady ? t('dynamic.breakReady') : t('dynamic.breakPercent', { charge: Math.floor(sim.breakCharge) }));
     const chargeFill = $('break-charge-fill'); if (chargeFill) chargeFill.style.width = sim.breakCharge + '%';
     const fill = $('recovery-fill');
     if (fill) fill.style.width = sim.attack ? '100%' : (sim.recovery / RECOVERY_SECONDS * 100) + '%';
-    const attack = sim.attack, note = attack ? sim.specs[attack.move].name : sim.recovery > 0 ? `БОЕВАЯ СТОЙКА · ${sim.recovery.toFixed(1)} С` : 'НЕЙТРАЛЬ · ГОТОВ К УДАРУ';
+    const attack = sim.attack, note = attack ? t('moves.' + attack.move) : sim.recovery > 0 ? t('dynamic.recovery', { seconds: number(sim.recovery, { minimumFractionDigits: 1, maximumFractionDigits: 1 }) }) : t('dynamic.neutral');
     setText('action-note', note);
-    setText('status', visualTime < statusUntil ? statusText : sim.queued ? 'ПРИЁМ В ОЧЕРЕДИ' : 'ЛОВИ МОМЕНТ. ДЕРЖИ ЦЕНТР.');
+    setText('status', visualTime < statusUntil ? translated(statusMessage) : t(sim.phase === 'loading' ? 'dynamic.loadingSprites' : sim.queued ? 'dynamic.queued' : 'dynamic.idle'));
     const muteButton = $('mute-button');
-    if (muteButton) { muteButton.setAttribute('aria-pressed', String(muted)); muteButton.setAttribute('aria-label', muted ? 'Включить звук (M)' : 'Выключить звук (M)'); muteButton.dataset.muted = String(muted); }
-    const pauseButton = $('pause-button'); if (pauseButton) { pauseButton.disabled = !['playing', 'paused'].includes(sim.phase); pauseButton.setAttribute('aria-label', sim.phase === 'paused' ? 'Продолжить (Esc)' : 'Пауза (Esc)'); }
+    if (muteButton) { muteButton.setAttribute('aria-pressed', String(muted)); muteButton.setAttribute('aria-label', t(muted ? 'dynamic.unmute' : 'dynamic.mute')); muteButton.dataset.muted = String(muted); }
+    const pauseButton = $('pause-button'); if (pauseButton) { pauseButton.disabled = !['playing', 'paused'].includes(sim.phase); pauseButton.setAttribute('aria-label', t(sim.phase === 'paused' ? 'dynamic.resumeAria' : 'dynamic.pauseAria')); }
     const startButton = $('start-button'); if (startButton) startButton.disabled = sim.phase === 'loading';
     document.querySelectorAll('[data-move="break"]').forEach(b => {
       b.dataset.ready = String(sim.breakReady); b.style.setProperty('--charge', sim.breakCharge + '%');
       b.disabled = !sim.breakReady || sim.phase !== 'playing'; b.setAttribute('aria-disabled', String(b.disabled));
     });
+    setText('combat-callout', translated(calloutMessage));
+    setText('combo-banner-title', translated(comboBannerMessage));
     const callout = $('combat-callout'); if (callout) callout.classList.toggle('is-visible', visualTime < calloutUntil && ['playing', 'paused'].includes(sim.phase));
     const banner = $('combo-banner'); if (banner) banner.classList.toggle('is-visible', visualTime < comboBannerUntil && ['playing', 'paused'].includes(sim.phase));
-    if (sim.phase === 'loading') { setText('overlay-title', 'СОБИРАЕМ БОЙЦА'); setText('overlay-copy', 'Готовим спрайты и ставим музыку на повтор.'); }
-    else if (sim.phase === 'paused') { setText('overlay-title', 'Перекур.'); setText('overlay-copy', 'Enter или Esc — продолжить.'); }
-    else if (sim.phase === 'gameover') { setText('overlay-title', 'Ты стал exit liquidity'); setText('overlay-copy', `В портфеле 3 Shitcoins. ${sim.score.toLocaleString('ru-RU')} очков. Попробуем без покупок?`); }
-    else if (sim.phase === 'menu') { setText('overlay-title', 'SHITCOINS'); setText('overlay-copy', spriteError || logoError ? 'Часть изображений не загрузилась. Обнови страницу.' : 'Отбивай монеты. Береги портфель.'); }
+    if (sim.phase === 'loading') { setText('overlay-title', t('dynamic.loadingTitle')); setText('overlay-copy', t('dynamic.loadingCopy')); }
+    else if (sim.phase === 'paused') { setText('overlay-title', t('dynamic.pausedTitle')); setText('overlay-copy', t('dynamic.pausedCopy')); }
+    else if (sim.phase === 'gameover') { setText('overlay-title', t('dynamic.gameoverTitle')); setText('overlay-copy', t('dynamic.gameoverCopy', { score: number(sim.score) })); }
+    else if (sim.phase === 'menu') { setText('overlay-title', t('dynamic.menuTitle')); setText('overlay-copy', t(spriteError || logoError ? 'dynamic.assetError' : 'dynamic.menuCopy')); }
   }
 
   function loadImage(src) {
@@ -420,12 +461,12 @@
     }
   }
   function objectPoint(o) { return { x: CX + o.side * o.distance, y: FEET - 100 + Math.sin(o.bob + sim.elapsed * 4.4) * 8 }; }
-  function combatCallout(text, perfect = false, duration = .6) {
-    setText('combat-callout', text); calloutUntil = visualTime + duration;
+  function combatCallout(key, perfect = false, duration = .6) {
+    calloutMessage = message(key); setText('combat-callout', translated(calloutMessage)); calloutUntil = visualTime + duration;
     const node = $('combat-callout'); if (node) node.dataset.perfect = String(perfect);
   }
-  function showCombo(title, tier) {
-    setText('combo-banner-title', title); comboBannerUntil = visualTime + 1.8;
+  function showCombo(key, tier) {
+    comboBannerMessage = message(key); setText('combo-banner-title', translated(comboBannerMessage)); comboBannerUntil = visualTime + 1.8;
     const node = $('combo-banner'); if (node) node.dataset.tier = String(tier);
   }
   function consumeEvents() {
@@ -434,8 +475,8 @@
         sound('super'); breakFlash = .72;
         impacts.push({ kind: 'break', x: CX, y: FEET - 95, life: .85, max: .85, color: '#d4a0ff', side: 1, power: 1 });
         spawnParticles(CX, FEET - 100, '#d4a0ff', 42, 1.8);
-        combatCallout('ПОРТФЕЛЬ ЧИСТ', true, 1.25);
-        announce('БРЕЙК · НИ ОДНОЙ ПОКУПКИ', 1.8);
+        combatCallout('dynamic.breakClean', true, 1.25);
+        announce('dynamic.breakNoBuy', 1.8);
       }
       if (e.kind === 'swing') sound('swing', e.move);
       if (e.kind === 'hit') {
@@ -446,22 +487,22 @@
         spawnParticles(point.x, point.y, color, e.perfect ? 27 : 18, leg ? 1.55 : 1);
         impacts.push({ kind: 'hit', ...point, side: e.object.side, power: leg ? 1.4 : 1, color, life: .28, max: .28 });
         reflected.push({ ...e.object, x: point.x, y: point.y, vx: e.object.side * ((leg ? 860 : 560) + Math.random() * 200), vy: -(leg ? 340 : 220) - Math.random() * 110, life: 1.1 });
-        floaters.push({ x: point.x, y: point.y - 43, text: '+' + e.points, color, life: .9 });
-        if (e.move !== 'break') combatCallout(e.perfect ? 'В ТОЧКУ' : 'ОТБИТО', e.perfect);
-        announce(e.move === 'break' ? 'ПОРТФЕЛЬ ЧИСТ' : e.perfect ? 'ТОЧНЫЙ УДАР · +16% К БРЕЙКУ' : 'ОТБИТО · +9% К БРЕЙКУ', 1.0);
+        floaters.push({ x: point.x, y: point.y - 43, message: message('dynamic.pointsGain', { points: e.points }), color, life: .9 });
+        if (e.move !== 'break') combatCallout(e.perfect ? 'dynamic.perfect' : 'dynamic.deflected', e.perfect);
+        announce(e.move === 'break' ? 'dynamic.breakClean' : e.perfect ? 'dynamic.perfectCharge' : 'dynamic.deflectedCharge', 1.0);
       }
-      if (e.kind === 'comboMilestone') { showCombo(e.title, e.tier); comboAccent(e.tier); }
-      if (e.kind === 'clang') { const p = objectPoint(e.object); sound('clang'); spawnParticles(p.x, p.y, '#ff755d', 8, .6); announce(e.text, 1.5); floaters.push({ x: p.x, y: p.y - 48, text: 'ЛЯЗГ!', color: '#ff816a', life: .75 }); }
+      if (e.kind === 'comboMilestone') { showCombo(e.textKey || 'combo.' + e.tier, e.tier); comboAccent(e.tier); }
+      if (e.kind === 'clang') { const p = objectPoint(e.object); sound('clang'); spawnParticles(p.x, p.y, '#ff755d', 8, .6); announce(e.textKey || (e.object.type === 'heavy' ? 'dynamic.clangHeavy' : 'dynamic.clangLight'), 1.5); floaters.push({ x: p.x, y: p.y - 48, message: message('dynamic.clang'), color: '#ff816a', life: .75 }); }
       if (e.kind === 'damage') {
         sound('damage'); shake = 12; damageFlash = .35; comboBannerUntil = calloutUntil = 0;
         spawnParticles(CX + e.object.side * 50, FEET - 140, '#ff705d', 25);
         const point = objectPoint(e.object);
         captures.push({ ...e.object, fromX: point.x, fromY: point.y, slot: 2 - e.lives, life: .52, max: .52 });
-        announce('ПОКУПКА В ПОРТФЕЛЕ · ' + (3 - e.lives) + '/3', 2);
+        announce('dynamic.bought', 2, { count: 3 - e.lives });
       }
       if (e.kind === 'wave') sound('wave');
       if (e.kind === 'gameover') { sound('gameover'); save(); music.pause(); }
-      if (e.kind === 'unavailable') announce(e.text, .9);
+      if (e.kind === 'unavailable') announce(e.textKey || 'dynamic.breakUnavailable', .9, e.textParams || { charge: Math.floor(sim.breakCharge) });
     }
     if (sim.best > savedBest) save();
   }
@@ -500,19 +541,19 @@
     ctx.strokeStyle = '#b9d59e36'; ctx.lineWidth = 1; ctx.beginPath(); ctx.ellipse(CX, FEET + 4, 125, 13, 0, 0, Math.PI * 2); ctx.stroke();
     ctx.restore();
   }
-  function drawHitZones(t) {
+  function drawHitZones(time) {
     if (!['playing', 'paused'].includes(sim.phase)) return;
     const next = sim.objects.reduce((a, b) => !a || b.distance < a.distance ? b : a, null);
     for (const side of [-1, 1]) {
       const incoming = next && next.side === side, color = incoming ? next.type === 'heavy' ? '255,65,88' : '115,242,206' : '154,185,165';
       const reach = incoming && next.type === 'heavy' ? 220 : 180;
-      const x = CX + side * reach, opacity = incoming ? .28 + Math.sin(t * 7) * .07 : .10;
+      const x = CX + side * reach, opacity = incoming ? .28 + Math.sin(time * 7) * .07 : .10;
       ctx.strokeStyle = `rgba(${color},${opacity})`; ctx.lineWidth = 2;
       ctx.setLineDash([5, 8]); ctx.beginPath(); ctx.moveTo(x, FEET - 240); ctx.lineTo(x, FEET - 32); ctx.stroke(); ctx.setLineDash([]);
       ctx.fillStyle = `rgba(${color},${opacity * .13})`; ctx.fillRect(side < 0 ? CX - reach : CX + 80, FEET - 230, reach - 80, 190);
       if (incoming && next.distance < 390 && next.distance > 80) {
         ctx.font = '700 12px system-ui'; ctx.textAlign = 'center'; ctx.fillStyle = `rgba(${color},.9)`;
-        ctx.fillText(next.type === 'heavy' ? 'НОГОЙ' : 'РУКАМИ', x, FEET - 254);
+        ctx.fillText(t(next.type === 'heavy' ? 'dynamic.kickHint' : 'dynamic.handsHint'), x, FEET - 254);
       }
     }
   }
@@ -585,7 +626,7 @@
         -(frame.anchorY === undefined ? frame.h * .91 : frame.anchorY) * scale, frame.w * scale, frame.h * scale);
     } else {
       // Only visible while the actual video sprites are loading or missing.
-      ctx.fillStyle = '#a1b992'; ctx.textAlign = 'center'; ctx.font = '600 15px system-ui'; ctx.fillText(sim.phase === 'loading' ? 'СОБИРАЕМ СПРАЙТЫ…' : 'СПРАЙТЫ НЕ ЗАГРУЗИЛИСЬ', CX, FEET - 125);
+      ctx.fillStyle = '#a1b992'; ctx.textAlign = 'center'; ctx.font = '600 15px system-ui'; ctx.fillText(t(sim.phase === 'loading' ? 'dynamic.loadingSprites' : 'dynamic.spriteError'), CX, FEET - 125);
     }
     ctx.restore();
   }
@@ -599,7 +640,7 @@
       roundRect(x - 43, 322, 86, 64, 10, '#071612c9', color + '66');
       ctx.strokeStyle = color; ctx.lineWidth = 2.5; ctx.lineCap = 'round';
       for (const shift of [-7, 5]) { ctx.beginPath(); ctx.moveTo(x + shift - side * 4, 334); ctx.lineTo(x + shift + side * 3, 341); ctx.lineTo(x + shift - side * 4, 348); ctx.stroke(); }
-      ctx.textAlign = 'center'; ctx.fillStyle = color; ctx.font = '700 13px "Russo One",sans-serif'; ctx.fillText(isHeavy ? 'НОГИ' : 'РУКИ', x, 373); ctx.restore();
+      ctx.textAlign = 'center'; ctx.fillStyle = color; ctx.font = '700 13px "Russo One",sans-serif'; ctx.fillText(t(isHeavy ? 'dynamic.legs' : 'dynamic.hands'), x, 373); ctx.restore();
     }
   }
   function drawImpacts(dt) {
@@ -651,7 +692,7 @@
     for (let i = reflected.length - 1; i >= 0; i--) { const o = reflected[i]; if (sim.phase !== 'paused') { o.life -= dt; o.x += o.vx * dt; o.y += o.vy * dt; o.vy += 670 * dt; o.angle += o.spin * dt * 6; } drawShitcoin(o, o.x, o.y, clamp(o.life * 2, 0, 1)); if (o.life <= 0) reflected.splice(i, 1); }
     for (let i = particles.length - 1; i >= 0; i--) { const p = particles[i]; if (sim.phase !== 'paused') { p.life -= dt; p.x += p.vx * dt; p.y += p.vy * dt; p.vy += 480 * dt; p.vx *= Math.pow(.2, dt); } ctx.globalAlpha = clamp(p.life / .3, 0, 1); ctx.fillStyle = p.color; ctx.fillRect(p.x, p.y, p.size, p.size); if (p.life <= 0) particles.splice(i, 1); }
     ctx.globalAlpha = 1;
-    for (let i = floaters.length - 1; i >= 0; i--) { const f = floaters[i]; if (sim.phase !== 'paused') { f.life -= dt; f.y -= dt * 44; } ctx.globalAlpha = clamp(f.life * 3, 0, 1); ctx.textAlign = 'center'; ctx.font = '900 27px "Russo One",sans-serif'; ctx.fillStyle = '#04110e'; ctx.fillText(f.text, f.x + 1, f.y + 2); ctx.fillStyle = f.color; ctx.fillText(f.text, f.x, f.y); if (f.life <= 0) floaters.splice(i, 1); }
+    for (let i = floaters.length - 1; i >= 0; i--) { const f = floaters[i]; if (sim.phase !== 'paused') { f.life -= dt; f.y -= dt * 44; } const text = translated(f.message); ctx.globalAlpha = clamp(f.life * 3, 0, 1); ctx.textAlign = 'center'; ctx.font = '900 27px "Russo One",sans-serif'; ctx.fillStyle = '#04110e'; ctx.fillText(text, f.x + 1, f.y + 2); ctx.fillStyle = f.color; ctx.fillText(text, f.x, f.y); if (f.life <= 0) floaters.splice(i, 1); }
     ctx.globalAlpha = 1; drawTelegraphs();
     const vignette = ctx.createRadialGradient(CX, H * .47, 220, CX, H * .47, 770); vignette.addColorStop(0, '#0000'); vignette.addColorStop(1, '#000b'); ctx.fillStyle = vignette; ctx.fillRect(0, 0, W, H);
     if (damageFlash > 0) { ctx.fillStyle = `rgba(235,65,45,${damageFlash * .28})`; ctx.fillRect(0, 0, W, H); }
@@ -674,7 +715,8 @@
     else accumulator = 0;
     consumeEvents(); render(sim.phase === 'paused' || hitStop > 0 ? 0 : stepDelta); updateHUD(); root.requestAnimationFrame(tick);
   }
-  root.ZYG_FIGHTER = { ready, get state() { return { ...sim.snapshot(), renderFrames, assetsLoaded: loadingDone, logosLoaded: coinImages.filter(Boolean).length, spriteError, logoError, muted, hitStop, hitStopCount, impactCount: impacts.length, reflectedCount: reflected.length }; } };
+  root.addEventListener('zygote:languagechange', () => { updateHUD(); render(0); });
+  root.ZYG_FIGHTER = { ready, get state() { return { ...sim.snapshot(), language: root.ZYG_I18N && root.ZYG_I18N.language || 'ru', renderFrames, assetsLoaded: loadingDone, logosLoaded: coinImages.filter(Boolean).length, spriteError, logoError, muted, hitStop, hitStopCount, impactCount: impacts.length, reflectedCount: reflected.length }; } };
   // Deterministic browser QA is explicitly opt-in and never present in normal play.
   if (new URLSearchParams(root.location.search).get('test') === '1') {
     root.ZYG_FIGHTER.test = {
