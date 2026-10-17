@@ -6,6 +6,8 @@ A kung-fu score attack arcade game: defend both sides of the platform, time each
 
 **[Play in your browser](https://azkian1.github.io/zyg-shitcoins/?lang=en)**
 
+[Project map](project.md) — file responsibilities, game systems and release workflow.
+
 ![Zygote vs Shitcoins gameplay with the English interface](docs/screenshots/gameplay-en.png)
 
 ## How to play

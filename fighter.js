@@ -48,7 +48,7 @@
     get breakReady() { return this.breakCharge >= 100; }
     get multiplier() { return Math.min(3, 1 + Math.floor(this.combo / 10) * .25); }
     get comboTier() { return this.combo >= 50 ? 3 : this.combo >= 25 ? 2 : this.combo >= 10 ? 1 : 0; }
-    get comboTitle() { return ['', 'НЕ ПОКУПАЮ', 'АЛМАЗНЫЕ РУКИ', 'ПОРТФЕЛЬ ЧИСТ'][this.comboTier]; }
+    get comboTitle() { return ['', 'НЕ ПОКУПАЮ', 'НЕ ПОДДАЛСЯ НА SHILL', 'ПОРТФЕЛЬ ЧИСТ'][this.comboTier]; }
     start() { this.reset(); this.phase = 'playing'; this.emit('start'); }
     emit(kind, data = {}) { this.events.push({ kind, ...data }); }
     setPaused(paused) {
@@ -284,7 +284,7 @@
   const fallbackText = {
     'moves.punch': 'УДАР РУКОЙ', 'moves.kick': 'УДАР НОГОЙ', 'moves.palm': 'ДВОЙНАЯ ЛАДОНЬ',
     'moves.jumpkick': 'УДАР В ПРЫЖКЕ', 'moves.break': 'БРЕЙК · ЗАЧИСТКА',
-    'combo.1': 'НЕ ПОКУПАЮ', 'combo.2': 'АЛМАЗНЫЕ РУКИ', 'combo.3': 'ПОРТФЕЛЬ ЧИСТ',
+    'combo.1': 'НЕ ПОКУПАЮ', 'combo.2': 'НЕ ПОДДАЛСЯ НА SHILL', 'combo.3': 'ПОРТФЕЛЬ ЧИСТ',
     'dynamic.breakUnavailable': 'БРЕЙК · {charge}% · ЗАРЯЖАЙ УДАРАМИ',
     'dynamic.intro': 'Мелкие — руками. Красные — ногами. Не покупай.', 'dynamic.keepCombo': 'ДЕРЖИ СЕРИЮ',
     'dynamic.portfolioAria': 'Портфель: {count} из 3. Третья монета завершает раунд.',
@@ -294,10 +294,13 @@
     'dynamic.unmute': 'Включить звук (M)', 'dynamic.mute': 'Выключить звук (M)', 'dynamic.resumeAria': 'Продолжить (Esc)', 'dynamic.pauseAria': 'Пауза (Esc)',
     'dynamic.loadingTitle': 'СОБИРАЕМ БОЙЦА', 'dynamic.loadingCopy': 'Готовим спрайты и ставим музыку на повтор.',
     'dynamic.pausedTitle': 'Перекур.', 'dynamic.pausedCopy': 'Enter или Esc — продолжить.',
-    'dynamic.gameoverTitle': 'Ты стал exit liquidity', 'dynamic.gameoverCopy': 'В портфеле 3 Shitcoins. {score} очков. Попробуем без покупок?',
+    'dynamic.gameoverTitle': 'Ты стал exit liquidity',
+    'dynamic.bagholder': 'Теперь ты бегхолдер.', 'dynamic.retryQuestion': 'Пробуем без покупок?',
+    'dynamic.gameoverScore': 'Очки: {score}', 'dynamic.gameoverScoreLabel': 'ТВОИ ОЧКИ',
+    'dynamic.gameoverPortfolioAria': 'Купленные Shitcoins: {count} из 3.',
     'dynamic.menuTitle': 'Zygote vs Shitcoins', 'dynamic.menuCopy': 'Отбивай монеты. Береги портфель.', 'dynamic.assetError': 'Часть изображений не загрузилась. Обнови страницу.',
     'dynamic.breakClean': 'ПОРТФЕЛЬ ЧИСТ', 'dynamic.breakNoBuy': 'БРЕЙК · НИ ОДНОЙ ПОКУПКИ',
-    'dynamic.perfect': 'В ТОЧКУ', 'dynamic.deflected': 'ОТБИТО', 'dynamic.perfectCharge': 'ТОЧНЫЙ УДАР · +16% К БРЕЙКУ', 'dynamic.deflectedCharge': 'ОТБИТО · +9% К БРЕЙКУ',
+    'dynamic.perfect': 'NO FOMO', 'dynamic.deflected': 'ОТБИТО', 'dynamic.perfectCharge': 'ТОЧНЫЙ УДАР · +16% К БРЕЙКУ', 'dynamic.deflectedCharge': 'ОТБИТО · +9% К БРЕЙКУ',
     'dynamic.clangHeavy': 'КРУПНЫЙ — НОГОЙ!', 'dynamic.clangLight': 'МЕЛКИЙ — РУКАМИ!', 'dynamic.clang': 'ЛЯЗГ!', 'dynamic.bought': 'ПОКУПКА В ПОРТФЕЛЕ · {count}/3',
     'dynamic.kickHint': 'НОГОЙ', 'dynamic.handsHint': 'РУКАМИ', 'dynamic.loadingSprites': 'СОБИРАЕМ СПРАЙТЫ…', 'dynamic.spriteError': 'СПРАЙТЫ НЕ ЗАГРУЗИЛИСЬ',
     'dynamic.legs': 'НОГИ', 'dynamic.hands': 'РУКИ', 'dynamic.pointsGain': '+{points}', 'dynamic.scoreDigits': '{score}'
@@ -377,10 +380,60 @@
   document.addEventListener('visibilitychange', () => { if (document.hidden && sim.phase === 'playing') pause(true); last = 0; });
   root.addEventListener('blur', () => { if (sim.phase === 'playing') pause(true); });
 
+  function updateGameoverPortfolio() {
+    const portfolio = $('gameover-portfolio');
+    if (!portfolio) return;
+    if (sim.phase !== 'gameover') {
+      if (portfolio.childElementCount) portfolio.replaceChildren();
+      delete portfolio.dataset.coins;
+      delete portfolio.dataset.locale;
+      return;
+    }
+    const coins = sim.portfolio.slice(0, 3);
+    const signature = coins.map(coin => coin.id + ':' + coin.variant).join('|');
+    if (portfolio.dataset.coins !== signature) {
+      const fragment = document.createDocumentFragment();
+      for (const coin of coins) {
+        const entry = coinManifest[coin.variant];
+        const slot = document.createElement('span');
+        slot.className = 'gameover-coin'; slot.setAttribute('role', 'listitem');
+        slot.dataset.variant = String(coin.variant);
+        if (entry) {
+          const art = document.createElement('span'); art.className = 'gameover-coin-art';
+          const image = document.createElement('img'); image.src = entry.src; image.dataset.variant = String(coin.variant);
+          const [x, y, width, height] = entry.bounds || [0, 0, 512, 512];
+          const side = Math.max(width, height), source = coinImages[coin.variant];
+          // Match the arena's bounds crop, then clip the normalized art to a circle.
+          image.style.width = ((source?.naturalWidth || 512) / side * 100) + '%';
+          image.style.height = ((source?.naturalHeight || 512) / side * 100) + '%';
+          image.style.left = (((side - width) / 2 - x) / side * 100) + '%';
+          image.style.top = (((side - height) / 2 - y) / side * 100) + '%';
+          art.appendChild(image); slot.appendChild(art);
+        }
+        fragment.appendChild(slot);
+      }
+      portfolio.replaceChildren(fragment); portfolio.dataset.coins = signature;
+      delete portfolio.dataset.locale;
+    }
+    const locale = root.ZYG_I18N?.language || 'ru';
+    if (portfolio.dataset.locale !== locale) {
+      portfolio.setAttribute('aria-label', t('dynamic.gameoverPortfolioAria', { count: coins.length }));
+      portfolio.querySelectorAll('.gameover-coin').forEach((slot, index) => {
+        const entry = coinManifest[coins[index].variant], image = slot.querySelector('img');
+        const label = t(entry ? 'dynamic.slotFilled' : 'dynamic.slotEmpty', { slot: index + 1, name: entry?.name || '' });
+        if (image) image.alt = label;
+        else slot.setAttribute('aria-label', label);
+      });
+      portfolio.dataset.locale = locale;
+    }
+  }
+
   function updateHUD() {
     document.body.dataset.phase = sim.phase;
     document.body.dataset.comboTier = String(sim.comboTier);
     const overlay = $('overlay'); if (overlay) overlay.hidden = sim.phase === 'playing';
+    const gameoverSummary = $('gameover-summary'); if (gameoverSummary) gameoverSummary.hidden = sim.phase !== 'gameover';
+    updateGameoverPortfolio();
     setText('score', t('dynamic.scoreDigits', { score: number(sim.score, { useGrouping: false, minimumIntegerDigits: 5 }) }));
     setText('best', t('dynamic.scoreDigits', { score: number(sim.best, { useGrouping: false, minimumIntegerDigits: 5 }) }));
     setText('combo', number(sim.combo, { useGrouping: false, minimumIntegerDigits: 2 }));
@@ -429,7 +482,14 @@
     const banner = $('combo-banner'); if (banner) banner.classList.toggle('is-visible', visualTime < comboBannerUntil && ['playing', 'paused'].includes(sim.phase));
     if (sim.phase === 'loading') { setText('overlay-title', t('dynamic.loadingTitle')); setText('overlay-copy', t('dynamic.loadingCopy')); }
     else if (sim.phase === 'paused') { setText('overlay-title', t('dynamic.pausedTitle')); setText('overlay-copy', t('dynamic.pausedCopy')); }
-    else if (sim.phase === 'gameover') { setText('overlay-title', t('dynamic.gameoverTitle')); setText('overlay-copy', t('dynamic.gameoverCopy', { score: number(sim.score) })); }
+    else if (sim.phase === 'gameover') {
+      setText('overlay-title', t('dynamic.gameoverTitle')); setText('overlay-copy', '');
+      setText('gameover-bagholder', t('dynamic.bagholder'));
+      setText('gameover-score', number(sim.score));
+      setText('gameover-question', t('dynamic.retryQuestion'));
+      const scoreCard = $('gameover-score-card');
+      if (scoreCard) scoreCard.setAttribute('aria-label', t('dynamic.gameoverScore', { score: number(sim.score) }));
+    }
     else if (sim.phase === 'menu') { setText('overlay-title', t('dynamic.menuTitle')); setText('overlay-copy', t(spriteError || logoError ? 'dynamic.assetError' : 'dynamic.menuCopy')); }
   }
 
