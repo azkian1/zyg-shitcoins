@@ -7,6 +7,9 @@
       this._volume = 1;
       this._muted = false;
       this._wanted = false;
+      this._epoch = 0;
+      this._usingFallback = false;
+      this._fallbackActive = false;
       this._offset = 0;
       this._source = null;
       this._context = null;
@@ -47,16 +50,24 @@
 
     async play(context) {
       this._wanted = true;
+      const epoch = this._epoch;
       if (this._source) return;
-      if (!context || !this._bytes) return this._fallback.play();
-      this._context = context;
+      if (!context || context.state === 'closed' || !this._bytes) return this._playFallback(epoch);
       if (!this._decoded) {
-        this._decoded = this._bytes.then(bytes => bytes && context.decodeAudioData(bytes)).catch(() => null);
+        // decodeAudioData may detach its input. Keep the fetched bytes intact
+        // so the cached buffer can safely outlive an AudioContext.
+        this._decoded = this._bytes.then(bytes => bytes && context.decodeAudioData(bytes.slice(0))).catch(() => null);
       }
       this._buffer = await this._decoded;
-      if (!this._wanted || this._source) return;
-      if (!this._buffer) return this._fallback.play();
+      if (!this._wanted || epoch !== this._epoch || this._source) return;
+      if (!this._buffer || context.state === 'closed') return this._playFallback(epoch);
+      if (this._usingFallback) {
+        this._offset = (Number(this._fallback.currentTime) || 0) % this._buffer.duration;
+        this._usingFallback = false;
+      }
       this._fallback.pause();
+      this._fallbackActive = false;
+      this._context = context;
       const now = context.currentTime;
       const source = context.createBufferSource();
       const gain = context.createGain();
@@ -75,9 +86,32 @@
       source.start(now, this._offset);
     }
 
+    async _playFallback(epoch) {
+      if (!this._wanted || epoch !== this._epoch) return;
+      if (this._fallbackActive) return;
+      this._usingFallback = true;
+      this._fallbackActive = true;
+      const duration = this._fallback.duration;
+      if (this._offset && Number.isFinite(duration) && duration > 0) {
+        this._fallback.currentTime = this._offset % duration;
+      }
+      try {
+        await this._fallback.play();
+      } catch (error) {
+        if (epoch === this._epoch) this._fallbackActive = false;
+        throw error;
+      }
+      // A media play promise can finish after pause(). Never resurrect audio
+      // from an earlier request, including a decode/fallback race.
+      if (!this._wanted && epoch !== this._epoch) this._fallback.pause();
+    }
+
     pause() {
       this._wanted = false;
+      this._epoch++;
+      if (this._usingFallback) this._offset = Number(this._fallback.currentTime) || 0;
       this._fallback.pause();
+      this._fallbackActive = false;
       if (!this._source) return;
       const now = this._context.currentTime;
       this._offset = (this._offset + now - this._startedAt) % this._buffer.duration;

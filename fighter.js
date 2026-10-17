@@ -41,10 +41,14 @@
       this.reset();
     }
     reset() {
-      Object.assign(this, { elapsed: 0, score: 0, lives: 3, combo: 0, difficulty: 1,
-        direction: 1, attack: null, recovery: 0, breakCooldown: 0, queued: null,
+      Object.assign(this, { elapsed: 0, score: 0, lives: 3, combo: 0, difficulty: 1, portfolio: [],
+        direction: 1, attack: null, recovery: 0, breakCharge: 0, breakCooldown: 0, queued: null,
         nextWave: 1.1, nextId: 1, waveId: 0, objects: [], damagedWaves: new Set(), events: [] });
     }
+    get breakReady() { return this.breakCharge >= 100; }
+    get multiplier() { return Math.min(3, 1 + Math.floor(this.combo / 10) * .25); }
+    get comboTier() { return this.combo >= 50 ? 3 : this.combo >= 25 ? 2 : this.combo >= 10 ? 1 : 0; }
+    get comboTitle() { return ['', 'НЕ ПОКУПАЮ', 'АЛМАЗНЫЕ РУКИ', 'ПОРТФЕЛЬ ЧИСТ'][this.comboTier]; }
     start() { this.reset(); this.phase = 'playing'; this.emit('start'); }
     emit(kind, data = {}) { this.events.push({ kind, ...data }); }
     setPaused(paused) {
@@ -54,8 +58,8 @@
     action(move, side, queue = true) {
       move = move === 'palms' ? 'palm' : move;
       if (this.phase !== 'playing' || !this.specs[move]) return false;
-      if (move === 'break' && this.breakCooldown > 0) {
-        this.emit('unavailable', { text: 'Брейк заряжается' }); return false;
+      if (move === 'break' && !this.breakReady) {
+        this.emit('unavailable', { text: 'БРЕЙК · ' + Math.floor(this.breakCharge) + '% · ЗАРЯЖАЙ УДАРАМИ' }); return false;
       }
       if (this.attack || this.recovery > 0) {
         if (queue && !this.attack && this.recovery <= RECOVERY_SECONDS) this.queued = { move, side };
@@ -65,7 +69,7 @@
       if (move !== 'break') this.direction = side;
       this.attack = { move, side, t: 0, hitIds: new Set(), clangIds: new Set(), hadHit: false, sounded: false };
       this.queued = null;
-      if (move === 'break') this.breakCooldown = 8;
+      if (move === 'break') this.breakCharge = 0;
       this.emit('attack', { move, side });
       return true;
     }
@@ -101,7 +105,6 @@
       dt = Math.min(dt, .05);
       this.elapsed += dt;
       this.difficulty = 1 + Math.floor(this.elapsed / 20);
-      this.breakCooldown = Math.max(0, this.breakCooldown - dt);
       this.nextWave -= dt;
       if (this.nextWave <= 0) this.spawnWave();
       const flowSpeed = this.flowSpeed();
@@ -131,10 +134,15 @@
             a.hitIds.add(object.id); a.hadHit = true; object.dead = true;
             const perfect = Math.abs(object.distance - (object.type === 'heavy' ? 165 : 140)) < 32;
             this.combo++;
-            const multiplier = Math.min(3, 1 + Math.floor(this.combo / 10) * .25);
+            const multiplier = this.multiplier;
             const points = Math.round(((object.type === 'heavy' ? 160 : 100) + (perfect ? 50 : 0)) * (a.move === 'jumpkick' ? 2 : 1) * multiplier);
             this.score += points; this.best = Math.max(this.best, this.score);
-            this.emit('hit', { object: { ...object }, move: a.move, perfect, points, combo: this.combo });
+            if (a.move !== 'break') this.breakCharge = clamp(this.breakCharge + (perfect ? 16 : 9), 0, 100);
+            this.emit('hit', { object: { ...object }, move: a.move, perfect, points, combo: this.combo,
+              multiplier, tier: this.comboTier, breakCharge: this.breakCharge });
+            if (this.combo === 10 || this.combo === 25 || this.combo === 50) {
+              this.emit('comboMilestone', { combo: this.combo, tier: this.comboTier, title: this.comboTitle, multiplier });
+            }
           }
         }
         if (a.t >= spec.duration) {
@@ -154,10 +162,11 @@
         object.dead = true;
         if (!this.damagedWaves.has(object.wave)) {
           this.damagedWaves.add(object.wave); this.lives = Math.max(0, this.lives - 1); this.combo = 0;
-          this.emit('damage', { object: { ...object }, lives: this.lives });
+          this.portfolio.push({ ...object });
+          this.emit('damage', { object: { ...object }, lives: this.lives, portfolio: this.portfolio.map(coin => ({ ...coin })) });
           if (this.lives <= 0) {
             this.phase = 'gameover'; this.attack = null; this.queued = null;
-            this.emit('gameover', { score: this.score, best: this.best });
+            this.emit('gameover', { score: this.score, best: this.best, portfolio: this.portfolio.map(coin => ({ ...coin })) });
             break;
           }
         }
@@ -171,7 +180,9 @@
     snapshot() {
       return { phase: this.phase, score: this.score, best: this.best, lives: this.lives,
         elapsed: this.elapsed, difficulty: this.difficulty, direction: this.direction,
-        recovery: this.recovery, breakCooldown: this.breakCooldown,
+        recovery: this.recovery, breakCooldown: this.breakCooldown, breakCharge: this.breakCharge, breakReady: this.breakReady,
+        combo: this.combo, multiplier: this.multiplier, comboTier: this.comboTier, comboTitle: this.comboTitle,
+        portfolio: this.portfolio.map(coin => ({ ...coin })),
         attack: this.attack && { move: this.attack.move, side: this.attack.side, t: this.attack.t, duration: this.specs[this.attack.move].duration },
         objects: this.objects.map(({ id, side, type, distance, speed, wave, variant, diameter, angle, spin }) => ({ id, side, type, distance, speed, wave, variant, diameter, angle, spin })) };
     }
@@ -192,11 +203,13 @@
   const sim = new FighterSimulation({ manifest, best: savedBest });
   sim.phase = 'loading';
   const coinManifest = root.ZYG_SHITCOINS || [];
-  const coinImages = [], atlases = [], particles = [], floaters = [], reflected = [];
+  const coinImages = [], atlases = [], particles = [], floaters = [], reflected = [], impacts = [], captures = [];
   let background = null, renderFrames = 0, shake = 0, damageFlash = 0, inputPulse = 0;
   let last = 0, accumulator = 0, visualTime = 0, audioContext = null, sfxGain = null;
   let statusText = '', statusUntil = 0, loadingDone = 0, spriteError = false, logoError = false;
-  const music = new root.ZYGMusicLoop('assets/music-loop.wav?v=20261016-loop2');
+  let hitStop = 0, calloutUntil = 0, comboBannerUntil = 0, breakFlash = 0, hitStopCount = 0;
+  const tierColors = ['#95ffda', '#e4f58b', '#7ce8ef', '#e8a2ff'];
+  const music = new root.ZYGMusicLoop('assets/music-loop.wav?v=de1885295dd090fd');
   music.volume = .42; music.muted = muted;
   const soundFiles = root.ZYG_SOUNDS || {};
   const soundPool = {};
@@ -238,11 +251,21 @@
     if (muted) return;
     if (playFile(kind === 'hit' ? (move === 'kick' || move === 'jumpkick' ? 'kick' : 'punch') : kind)) return;
     if (kind === 'swing') { noise(.12, .24, move === 'break' ? 1100 : 2400); tone(300, 90, .1, .05); }
-    else if (kind === 'hit') { tone(move === 'kick' || move === 'jumpkick' ? 120 : 175, 32, .17, .6, 'triangle'); noise(.13, .47, 2900); tone(850, 260, .055, .1, 'square'); }
+    else if (kind === 'hit') {
+      const leg = move === 'kick' || move === 'jumpkick';
+      tone(leg ? 98 : 175, leg ? 24 : 38, leg ? .27 : .14, leg ? .78 : .5, 'triangle');
+      noise(leg ? .19 : .10, leg ? .56 : .37, leg ? 1800 : 3400);
+      tone(leg ? 58 : 850, leg ? 27 : 260, leg ? .23 : .045, leg ? .32 : .08, leg ? 'sine' : 'square');
+    }
     else if (kind === 'clang') { tone(760, 480, .28, .16, 'square'); tone(1130, 690, .2, .09, 'triangle'); }
     else if (kind === 'damage') { noise(.30, .50, 1300); tone(160, 30, .38, .5, 'sawtooth'); }
     else if (kind === 'wave') { tone(390, 520, .07, .05, 'sine'); noise(.1, .055, 4000); }
     else if (kind === 'gameover') { [180, 145, 95].forEach((f, i) => tone(f, f * .75, .35, .22, 'triangle', i * .13)); }
+    else if (kind === 'super') { tone(65, 24, .65, .55, 'triangle'); noise(.48, .44, 1800); [220, 330, 440].forEach((f, i) => tone(f, f * 1.2, .22, .13, 'sine', i * .055)); }
+  }
+  function comboAccent(tier) {
+    const base = [0, 330, 392, 440][tier] || 330;
+    [1, 1.25, 1.5, 2].slice(0, tier + 1).forEach((ratio, i) => tone(base * ratio, base * ratio, .18, .12, 'triangle', i * .065));
   }
   function coinSound(object) {
     if (object.type === 'heavy') {
@@ -265,7 +288,12 @@
     if (!muted && sim.phase === 'playing') unlockAudio();
     updateHUD();
   }
-  function start() { if (sim.phase === 'loading') return; unlockAudio(); sim.start(); particles.length = floaters.length = reflected.length = 0; accumulator = 0; shake = 0; announce('Shitcoins: мелкие — руками, крупные красные — ногами.', 4.5); updateHUD(); }
+  function start() {
+    if (sim.phase === 'loading') return;
+    unlockAudio(); sim.start(); particles.length = floaters.length = reflected.length = impacts.length = captures.length = 0;
+    accumulator = shake = hitStop = breakFlash = calloutUntil = comboBannerUntil = hitStopCount = 0;
+    announce('Мелкие — руками. Красные — ногами. Не покупай.', 4.5); updateHUD();
+  }
   function pause(value) {
     sim.setPaused(value); accumulator = 0;
     if (sim.phase === 'paused') music.pause(); else if (sim.phase === 'playing') unlockAudio();
@@ -283,7 +311,10 @@
       inputPulse = .25;
     }
   }
-  const keys = { KeyQ: ['punch', -1], KeyW: ['kick', -1], KeyE: ['palm', -1], KeyI: ['punch', 1], KeyO: ['kick', 1], KeyP: ['palm', 1], Space: ['break', 0] };
+  const keys = {
+    KeyW: ['jumpkick', -1], KeyA: ['punch', -1], KeyS: ['kick', -1], KeyD: ['palm', -1],
+    KeyI: ['jumpkick', 1], KeyJ: ['punch', 1], KeyK: ['kick', 1], KeyL: ['palm', 1], Space: ['break', 0]
+  };
   root.addEventListener('keydown', event => {
     if (event.target && /INPUT|TEXTAREA|SELECT/.test(event.target.tagName)) return;
     if (keys[event.code] || ['Enter', 'Escape', 'KeyM'].includes(event.code)) event.preventDefault();
@@ -292,7 +323,7 @@
     if (event.code === 'Escape') { if (sim.phase === 'playing' || sim.phase === 'paused') pause(sim.phase === 'playing'); return; }
     if (event.code === 'Enter') { if (sim.phase === 'paused') pause(false); else if (sim.phase !== 'playing') start(); return; }
     const entry = keys[event.code];
-    if (entry) requestMove(event.shiftKey && entry[0] === 'kick' ? 'jumpkick' : entry[0], entry[1]);
+    if (entry) requestMove(entry[0], entry[1]);
   });
   document.querySelectorAll('[data-move]').forEach(button => {
     button.addEventListener('pointerdown', event => { event.preventDefault(); requestMove(button.dataset.move, Number(button.dataset.side) || 0); });
@@ -309,14 +340,37 @@
 
   function updateHUD() {
     document.body.dataset.phase = sim.phase;
+    document.body.dataset.comboTier = String(sim.comboTier);
     const overlay = $('overlay'); if (overlay) overlay.hidden = sim.phase === 'playing';
     setText('score', String(sim.score).padStart(5, '0'));
     setText('best', String(sim.best).padStart(5, '0'));
-    setText('combo', sim.combo > 1 ? '×' + sim.combo : '—');
+    setText('combo', String(sim.combo).padStart(2, '0'));
+    setText('multiplier', '×' + sim.multiplier.toFixed(2));
+    setText('combo-title', sim.comboTitle || 'ДЕРЖИ СЕРИЮ');
     setText('level', String(sim.difficulty).padStart(2, '0'));
-    const hearts = $('hearts');
-    if (hearts) { hearts.textContent = '♥'.repeat(sim.lives) + '♡'.repeat(Math.max(0, 3 - sim.lives)); hearts.setAttribute('aria-label', `Жизни: ${sim.lives} из 3`); }
-    setText('break-cooldown', sim.breakCooldown > 0 ? sim.breakCooldown.toFixed(1) + ' с' : 'ГОТОВ');
+    const portfolio = $('portfolio');
+    if (portfolio) {
+      const caption = document.querySelector('.portfolio-caption'); if (caption) caption.textContent = `${sim.portfolio.length} / 3`;
+      portfolio.setAttribute('aria-label', `Портфель: ${sim.portfolio.length} из 3. Третья монета завершает раунд.`);
+      portfolio.querySelectorAll('.portfolio-slot').forEach((slot, index) => {
+        const coin = sim.portfolio[index], entry = coin && coinManifest[coin.variant];
+        const capturing = captures.some(c => c.slot === index && c.life > 0);
+        slot.classList.toggle('is-filled', !!coin); slot.classList.toggle('is-capturing', capturing);
+        const icon = slot.querySelector('svg'); if (icon) icon.style.display = coin ? 'none' : '';
+        let img = slot.querySelector('img');
+        if (entry) {
+          if (!img) { img = document.createElement('img'); slot.appendChild(img); }
+          if (img.dataset.variant !== String(coin.variant)) { img.src = entry.src; img.alt = entry.symbol; img.dataset.variant = String(coin.variant); }
+          img.style.opacity = capturing ? '0' : '1';
+          slot.setAttribute('aria-label', `Слот ${index + 1}: ${entry.name}`);
+        } else {
+          if (img) img.remove();
+          slot.setAttribute('aria-label', `Слот ${index + 1}: пусто`);
+        }
+      });
+    }
+    setText('break-cooldown', sim.breakReady ? 'ГОТОВ' : Math.floor(sim.breakCharge) + '%');
+    const chargeFill = $('break-charge-fill'); if (chargeFill) chargeFill.style.width = sim.breakCharge + '%';
     const fill = $('recovery-fill');
     if (fill) fill.style.width = sim.attack ? '100%' : (sim.recovery / RECOVERY_SECONDS * 100) + '%';
     const attack = sim.attack, note = attack ? sim.specs[attack.move].name : sim.recovery > 0 ? `БОЕВАЯ СТОЙКА · ${sim.recovery.toFixed(1)} С` : 'НЕЙТРАЛЬ · ГОТОВ К УДАРУ';
@@ -326,11 +380,16 @@
     if (muteButton) { muteButton.setAttribute('aria-pressed', String(muted)); muteButton.setAttribute('aria-label', muted ? 'Включить звук (M)' : 'Выключить звук (M)'); muteButton.dataset.muted = String(muted); }
     const pauseButton = $('pause-button'); if (pauseButton) { pauseButton.disabled = !['playing', 'paused'].includes(sim.phase); pauseButton.setAttribute('aria-label', sim.phase === 'paused' ? 'Продолжить (Esc)' : 'Пауза (Esc)'); }
     const startButton = $('start-button'); if (startButton) startButton.disabled = sim.phase === 'loading';
-    document.querySelectorAll('[data-move="break"]').forEach(b => { b.dataset.ready = String(sim.breakCooldown <= 0); b.setAttribute('aria-disabled', String(sim.breakCooldown > 0 || sim.phase !== 'playing')); });
+    document.querySelectorAll('[data-move="break"]').forEach(b => {
+      b.dataset.ready = String(sim.breakReady); b.style.setProperty('--charge', sim.breakCharge + '%');
+      b.disabled = !sim.breakReady || sim.phase !== 'playing'; b.setAttribute('aria-disabled', String(b.disabled));
+    });
+    const callout = $('combat-callout'); if (callout) callout.classList.toggle('is-visible', visualTime < calloutUntil && ['playing', 'paused'].includes(sim.phase));
+    const banner = $('combo-banner'); if (banner) banner.classList.toggle('is-visible', visualTime < comboBannerUntil && ['playing', 'paused'].includes(sim.phase));
     if (sim.phase === 'loading') { setText('overlay-title', 'СОБИРАЕМ БОЙЦА'); setText('overlay-copy', 'Готовим спрайты и ставим музыку на повтор.'); }
     else if (sim.phase === 'paused') { setText('overlay-title', 'Перекур.'); setText('overlay-copy', 'Enter или Esc — продолжить.'); }
-    else if (sim.phase === 'gameover') { setText('overlay-title', 'Shitcoins в портфеле.'); setText('overlay-copy', `${sim.score.toLocaleString('ru-RU')} очков · рекорд ${sim.best.toLocaleString('ru-RU')}. Очистим портфель?`); }
-    else if (sim.phase === 'menu') { setText('overlay-title', 'Shitcoins.'); setText('overlay-copy', spriteError || logoError ? 'Часть изображений не загрузилась. Обнови страницу.' : 'Отбивай монеты — береги портфель.'); }
+    else if (sim.phase === 'gameover') { setText('overlay-title', 'Ты стал exit liquidity'); setText('overlay-copy', `В портфеле 3 Shitcoins. ${sim.score.toLocaleString('ru-RU')} очков. Попробуем без покупок?`); }
+    else if (sim.phase === 'menu') { setText('overlay-title', 'SHITCOINS'); setText('overlay-copy', spriteError || logoError ? 'Часть изображений не загрузилась. Обнови страницу.' : 'Отбивай монеты. Береги портфель.'); }
   }
 
   function loadImage(src) {
@@ -361,19 +420,45 @@
     }
   }
   function objectPoint(o) { return { x: CX + o.side * o.distance, y: FEET - 100 + Math.sin(o.bob + sim.elapsed * 4.4) * 8 }; }
+  function combatCallout(text, perfect = false, duration = .6) {
+    setText('combat-callout', text); calloutUntil = visualTime + duration;
+    const node = $('combat-callout'); if (node) node.dataset.perfect = String(perfect);
+  }
+  function showCombo(title, tier) {
+    setText('combo-banner-title', title); comboBannerUntil = visualTime + 1.8;
+    const node = $('combo-banner'); if (node) node.dataset.tier = String(tier);
+  }
   function consumeEvents() {
     for (const e of sim.events.splice(0)) {
+      if (e.kind === 'attack' && e.move === 'break') {
+        sound('super'); breakFlash = .72;
+        impacts.push({ kind: 'break', x: CX, y: FEET - 95, life: .85, max: .85, color: '#d4a0ff', side: 1, power: 1 });
+        spawnParticles(CX, FEET - 100, '#d4a0ff', 42, 1.8);
+        combatCallout('ПОРТФЕЛЬ ЧИСТ', true, 1.25);
+        announce('БРЕЙК · НИ ОДНОЙ ПОКУПКИ', 1.8);
+      }
       if (e.kind === 'swing') sound('swing', e.move);
       if (e.kind === 'hit') {
-        const point = objectPoint(e.object), color = e.object.type === 'heavy' ? '#ff5367' : '#95ffda';
-        sound('hit', e.move); coinSound(e.object); shake = Math.max(shake, e.move === 'jumpkick' ? 8 : e.move === 'kick' ? 5 : 3.5);
-        spawnParticles(point.x, point.y, color, e.perfect ? 23 : 15, e.move === 'jumpkick' ? 1.4 : 1);
-        reflected.push({ ...e.object, x: point.x, y: point.y, vx: e.object.side * (530 + Math.random() * 180), vy: -230 - Math.random() * 130, life: 1.1 });
-        floaters.push({ x: point.x, y: point.y - 43, text: (e.perfect ? 'В ТОЧКУ! ' : '') + '+' + e.points, color, life: .9 });
-        announce(e.perfect ? 'В ТОЧКУ · БОНУС ЗА ТАЙМИНГ' : 'Shitcoins ОТБИТЫ · ПОРТФЕЛЬ ЧИСТ', 1.25);
+        const point = objectPoint(e.object), leg = e.move === 'kick' || e.move === 'jumpkick';
+        const color = e.object.type === 'heavy' ? '#ff657a' : tierColors[e.tier || 0];
+        hitStop = Math.max(hitStop, leg || e.move === 'break' ? .06 : .045); hitStopCount++;
+        sound('hit', e.move); coinSound(e.object); shake = Math.max(shake, e.move === 'jumpkick' ? 10 : leg ? 7 : 4);
+        spawnParticles(point.x, point.y, color, e.perfect ? 27 : 18, leg ? 1.55 : 1);
+        impacts.push({ kind: 'hit', ...point, side: e.object.side, power: leg ? 1.4 : 1, color, life: .28, max: .28 });
+        reflected.push({ ...e.object, x: point.x, y: point.y, vx: e.object.side * ((leg ? 860 : 560) + Math.random() * 200), vy: -(leg ? 340 : 220) - Math.random() * 110, life: 1.1 });
+        floaters.push({ x: point.x, y: point.y - 43, text: '+' + e.points, color, life: .9 });
+        if (e.move !== 'break') combatCallout(e.perfect ? 'В ТОЧКУ' : 'ОТБИТО', e.perfect);
+        announce(e.move === 'break' ? 'ПОРТФЕЛЬ ЧИСТ' : e.perfect ? 'ТОЧНЫЙ УДАР · +16% К БРЕЙКУ' : 'ОТБИТО · +9% К БРЕЙКУ', 1.0);
       }
+      if (e.kind === 'comboMilestone') { showCombo(e.title, e.tier); comboAccent(e.tier); }
       if (e.kind === 'clang') { const p = objectPoint(e.object); sound('clang'); spawnParticles(p.x, p.y, '#ff755d', 8, .6); announce(e.text, 1.5); floaters.push({ x: p.x, y: p.y - 48, text: 'ЛЯЗГ!', color: '#ff816a', life: .75 }); }
-      if (e.kind === 'damage') { sound('damage'); shake = 12; damageFlash = .35; spawnParticles(CX + e.object.side * 50, FEET - 140, '#ff705d', 25); announce('Shitcoins В ПОРТФЕЛЕ · ' + e.lives + ' ЖИЗНИ', 2); }
+      if (e.kind === 'damage') {
+        sound('damage'); shake = 12; damageFlash = .35; comboBannerUntil = calloutUntil = 0;
+        spawnParticles(CX + e.object.side * 50, FEET - 140, '#ff705d', 25);
+        const point = objectPoint(e.object);
+        captures.push({ ...e.object, fromX: point.x, fromY: point.y, slot: 2 - e.lives, life: .52, max: .52 });
+        announce('ПОКУПКА В ПОРТФЕЛЕ · ' + (3 - e.lives) + '/3', 2);
+      }
       if (e.kind === 'wave') sound('wave');
       if (e.kind === 'gameover') { sound('gameover'); save(); music.pause(); }
       if (e.kind === 'unavailable') announce(e.text, .9);
@@ -459,7 +544,7 @@
       ctx.fillText('$', 0, 0);
     }
     ctx.restore();
-    if (alpha > .7) {
+    if (alpha > .7 && !o.captured) {
       ctx.fillStyle = color; ctx.beginPath(); ctx.arc(0, radius + 13, heavy ? 3.6 : 2.8, 0, Math.PI * 2); ctx.fill();
     }
     ctx.restore();
@@ -479,10 +564,16 @@
     ctx.save();
     ctx.fillStyle = '#07110b72'; ctx.beginPath(); ctx.ellipse(CX, FEET + 5, 67, 10, 0, 0, Math.PI * 2); ctx.fill();
     if (sim.attack && sim.attack.t >= sim.specs[sim.attack.move].start && sim.attack.t <= sim.specs[sim.attack.move].end) {
-      const side = sim.attack.side, both = sim.attack.move === 'break', color = sim.specs[sim.attack.move].type === 'light' ? '#a4ffe05e' : '#ff536760';
-      ctx.strokeStyle = color; ctx.lineWidth = both ? 5 : 9; ctx.shadowColor = color; ctx.shadowBlur = 15;
+      const side = sim.attack.side, both = sim.attack.move === 'break', tier = sim.comboTier;
+      const color = both ? '#d4a0ff' : tier > 0 ? tierColors[tier] : sim.specs[sim.attack.move].type === 'light' ? '#a4ffe0' : '#ff5367';
+      ctx.globalAlpha = .48; ctx.strokeStyle = color; ctx.lineWidth = both ? 12 : 8 + tier * 3; ctx.shadowColor = color; ctx.shadowBlur = 15 + tier * 7;
       const radius = both ? 235 : sim.specs[sim.attack.move].type === 'light' ? 145 : 180;
-      ctx.beginPath(); ctx.ellipse(CX, FEET - (both ? 80 : 110), radius, both ? 50 : 115, -.12 * side, both ? 0 : side > 0 ? -.95 : 2.15, both ? Math.PI * 2 : side > 0 ? .95 : 4.05); ctx.stroke(); ctx.shadowBlur = 0;
+      ctx.beginPath(); ctx.ellipse(CX, FEET - (both ? 80 : 110), radius, both ? 50 : 115, -.12 * side, both ? 0 : side > 0 ? -.95 : 2.15, both ? Math.PI * 2 : side > 0 ? .95 : 4.05); ctx.stroke();
+      if (tier > 0 || both) {
+        ctx.globalAlpha = .22; ctx.lineWidth = 3;
+        for (let k = 1; k <= (both ? 3 : tier); k++) { ctx.beginPath(); ctx.ellipse(CX, FEET - (both ? 80 : 110), radius + k * 13, both ? 50 + k * 9 : 115 + k * 8, -.12 * side, both ? 0 : side > 0 ? -.95 : 2.15, both ? Math.PI * 2 : side > 0 ? .95 : 4.05); ctx.stroke(); }
+      }
+      ctx.shadowBlur = 0; ctx.globalAlpha = 1;
     }
     const frame = getMotionFrame();
     if (frame && atlases[frame.atlas]) {
@@ -506,32 +597,84 @@
       const isHeavy = upcoming.type === 'heavy', x = side < 0 ? 64 : W - 64, color = isHeavy ? '#ff5367' : '#9affd9';
       ctx.save(); ctx.globalAlpha = clamp((upcoming.distance - 60) / 120, .3, 1);
       roundRect(x - 43, 322, 86, 64, 10, '#071612c9', color + '66');
-      ctx.textAlign = 'center'; ctx.fillStyle = color; ctx.font = '900 22px system-ui'; ctx.fillText(side < 0 ? '››' : '‹‹', x, 348);
-      ctx.font = '800 10px system-ui'; ctx.fillText(isHeavy ? 'НОГИ' : 'РУКИ', x, 371); ctx.restore();
+      ctx.strokeStyle = color; ctx.lineWidth = 2.5; ctx.lineCap = 'round';
+      for (const shift of [-7, 5]) { ctx.beginPath(); ctx.moveTo(x + shift - side * 4, 334); ctx.lineTo(x + shift + side * 3, 341); ctx.lineTo(x + shift - side * 4, 348); ctx.stroke(); }
+      ctx.textAlign = 'center'; ctx.fillStyle = color; ctx.font = '700 13px "Russo One",sans-serif'; ctx.fillText(isHeavy ? 'НОГИ' : 'РУКИ', x, 373); ctx.restore();
+    }
+  }
+  function drawImpacts(dt) {
+    for (let i = impacts.length - 1; i >= 0; i--) {
+      const impact = impacts[i], progress = 1 - impact.life / impact.max;
+      ctx.save(); ctx.translate(impact.x, impact.y); ctx.globalAlpha = Math.max(0, 1 - progress);
+      ctx.strokeStyle = impact.color; ctx.shadowColor = impact.color; ctx.shadowBlur = 18;
+      if (impact.kind === 'break') {
+        for (let ring = 0; ring < 3; ring++) {
+          const r = 35 + progress * (340 + ring * 32);
+          ctx.strokeStyle = ['#94ffdb', '#ffd77c', '#d4a0ff'][ring]; ctx.lineWidth = (1 - progress) * 12 + 2;
+          ctx.beginPath(); ctx.ellipse(0, 0, r, r * .42, ring * .12, ring * .8, Math.PI * 2 - .22 + ring * .8); ctx.stroke();
+        }
+      } else {
+        ctx.rotate(impact.side < 0 ? Math.PI : 0);
+        const reach = (26 + progress * 115) * impact.power;
+        ctx.fillStyle = '#f6fff0'; ctx.beginPath();
+        ctx.moveTo(-14, 0); ctx.lineTo(4, -10 * (1 - progress)); ctx.lineTo(reach, 0); ctx.lineTo(4, 10 * (1 - progress)); ctx.closePath(); ctx.fill();
+        ctx.lineWidth = (1 - progress) * 5 + 1;
+        ctx.beginPath(); ctx.arc(0, 0, 12 + progress * 64 * impact.power, -.95, .95); ctx.stroke();
+        for (const sign of [-1, 1]) { ctx.beginPath(); ctx.moveTo(0, sign * 8); ctx.lineTo(reach * .65, sign * (14 + progress * 30)); ctx.stroke(); }
+        if (progress < .22) { ctx.fillStyle = '#fffef1'; ctx.beginPath(); ctx.arc(0, 0, 12 * (1 - progress / .22), 0, Math.PI * 2); ctx.fill(); }
+      }
+      ctx.restore(); impact.life -= dt;
+      if (impact.life <= 0) impacts.splice(i, 1);
+    }
+  }
+  function drawCaptures(dt) {
+    const rect = canvas.getBoundingClientRect(), scale = Math.min(rect.width / W, rect.height / H);
+    if (!scale) return;
+    for (let i = captures.length - 1; i >= 0; i--) {
+      const coin = captures[i], slot = document.querySelector(`.portfolio-slot[data-slot="${coin.slot}"]`);
+      if (slot) {
+        const destination = slot.getBoundingClientRect(), progress = 1 - coin.life / coin.max, ease = 1 - Math.pow(1 - progress, 3);
+        const x = (destination.left + destination.width / 2 - rect.left - (rect.width - W * scale) / 2) / scale;
+        const y = (destination.top + destination.height / 2 - rect.top - (rect.height - H * scale) / 2) / scale;
+        const size = coin.diameter * (1 - ease) + (destination.width / scale * .62) * ease;
+        drawShitcoin({ ...coin, captured: true, diameter: size, angle: coin.angle + progress * 5 }, coin.fromX + (x - coin.fromX) * ease, coin.fromY + (y - coin.fromY) * ease - Math.sin(progress * Math.PI) * 95);
+      }
+      coin.life -= dt; if (coin.life <= 0) captures.splice(i, 1);
     }
   }
   function render(dt) {
-    renderFrames++; visualTime += dt; shake = Math.max(0, shake - dt * 30); damageFlash = Math.max(0, damageFlash - dt); inputPulse = Math.max(0, inputPulse - dt);
+    renderFrames++; visualTime += dt; shake = Math.max(0, shake - dt * 30); damageFlash = Math.max(0, damageFlash - dt); inputPulse = Math.max(0, inputPulse - dt); breakFlash = Math.max(0, breakFlash - dt);
     ctx.save(); if (shake > 0 && sim.phase !== 'paused') ctx.translate((Math.random() - .5) * shake, (Math.random() - .5) * shake * .5);
     drawBackground(visualTime); drawPlatform(); drawHitZones(visualTime);
     sim.objects.forEach(o => { const p = objectPoint(o); drawShitcoin(o, p.x, p.y); });
-    drawCharacter();
+    drawCharacter(); drawImpacts(dt);
     for (let i = reflected.length - 1; i >= 0; i--) { const o = reflected[i]; if (sim.phase !== 'paused') { o.life -= dt; o.x += o.vx * dt; o.y += o.vy * dt; o.vy += 670 * dt; o.angle += o.spin * dt * 6; } drawShitcoin(o, o.x, o.y, clamp(o.life * 2, 0, 1)); if (o.life <= 0) reflected.splice(i, 1); }
     for (let i = particles.length - 1; i >= 0; i--) { const p = particles[i]; if (sim.phase !== 'paused') { p.life -= dt; p.x += p.vx * dt; p.y += p.vy * dt; p.vy += 480 * dt; p.vx *= Math.pow(.2, dt); } ctx.globalAlpha = clamp(p.life / .3, 0, 1); ctx.fillStyle = p.color; ctx.fillRect(p.x, p.y, p.size, p.size); if (p.life <= 0) particles.splice(i, 1); }
     ctx.globalAlpha = 1;
-    for (let i = floaters.length - 1; i >= 0; i--) { const f = floaters[i]; if (sim.phase !== 'paused') { f.life -= dt; f.y -= dt * 44; } ctx.globalAlpha = clamp(f.life * 3, 0, 1); ctx.textAlign = 'center'; ctx.font = '900 19px system-ui'; ctx.fillStyle = '#04110e'; ctx.fillText(f.text, f.x + 1, f.y + 2); ctx.fillStyle = f.color; ctx.fillText(f.text, f.x, f.y); if (f.life <= 0) floaters.splice(i, 1); }
+    for (let i = floaters.length - 1; i >= 0; i--) { const f = floaters[i]; if (sim.phase !== 'paused') { f.life -= dt; f.y -= dt * 44; } ctx.globalAlpha = clamp(f.life * 3, 0, 1); ctx.textAlign = 'center'; ctx.font = '900 27px "Russo One",sans-serif'; ctx.fillStyle = '#04110e'; ctx.fillText(f.text, f.x + 1, f.y + 2); ctx.fillStyle = f.color; ctx.fillText(f.text, f.x, f.y); if (f.life <= 0) floaters.splice(i, 1); }
     ctx.globalAlpha = 1; drawTelegraphs();
     const vignette = ctx.createRadialGradient(CX, H * .47, 220, CX, H * .47, 770); vignette.addColorStop(0, '#0000'); vignette.addColorStop(1, '#000b'); ctx.fillStyle = vignette; ctx.fillRect(0, 0, W, H);
     if (damageFlash > 0) { ctx.fillStyle = `rgba(235,65,45,${damageFlash * .28})`; ctx.fillRect(0, 0, W, H); }
+    if (breakFlash > 0) { ctx.fillStyle = `rgba(184,115,255,${breakFlash * .10})`; ctx.fillRect(0, 0, W, H); }
     ctx.restore();
+    drawCaptures(dt);
   }
   function tick(timestamp) {
     const delta = last ? Math.min((timestamp - last) / 1000, .05) : 0; last = timestamp;
-    if (sim.phase === 'playing') { accumulator += delta; while (accumulator >= 1 / 120) { sim.update(1 / 120); accumulator -= 1 / 120; if (sim.phase !== 'playing') { accumulator = 0; break; } } }
+    const frozen = sim.phase === 'playing' ? Math.min(hitStop, delta) : 0;
+    hitStop = Math.max(0, hitStop - frozen);
+    const stepDelta = delta - frozen;
+    if (sim.phase === 'playing') {
+      accumulator += stepDelta;
+      while (accumulator >= 1 / 120) {
+        sim.update(1 / 120); accumulator -= 1 / 120; consumeEvents();
+        if (sim.phase !== 'playing' || hitStop > 0) { accumulator = 0; break; }
+      }
+    }
     else accumulator = 0;
-    consumeEvents(); render(delta); updateHUD(); root.requestAnimationFrame(tick);
+    consumeEvents(); render(sim.phase === 'paused' || hitStop > 0 ? 0 : stepDelta); updateHUD(); root.requestAnimationFrame(tick);
   }
-  root.ZYG_FIGHTER = { ready, get state() { return { ...sim.snapshot(), renderFrames, assetsLoaded: loadingDone, logosLoaded: coinImages.filter(Boolean).length, spriteError, logoError, muted }; } };
+  root.ZYG_FIGHTER = { ready, get state() { return { ...sim.snapshot(), renderFrames, assetsLoaded: loadingDone, logosLoaded: coinImages.filter(Boolean).length, spriteError, logoError, muted, hitStop, hitStopCount, impactCount: impacts.length, reflectedCount: reflected.length }; } };
   // Deterministic browser QA is explicitly opt-in and never present in normal play.
   if (new URLSearchParams(root.location.search).get('test') === '1') {
     root.ZYG_FIGHTER.test = {
