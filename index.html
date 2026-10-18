@@ -9,12 +9,12 @@
   <link rel="icon" type="image/svg+xml" href="assets/zygote-mark.svg?v=848ab1759936975d">
   <link rel="preload" href="assets/fonts/RussoOne-Regular.ttf?v=bc0abcc660bd8b7a" as="font" type="font/ttf" crossorigin>
   <link rel="preload" href="assets/fonts/GolosText-Variable.ttf?v=17bb58fb69aec2df" as="font" type="font/ttf" crossorigin>
-  <link rel="stylesheet" href="styles.css?v=26257d823dfba936">
-  <script src="assets/motions.js?v=9e90031d490daad4" defer></script>
+  <link rel="stylesheet" href="styles.css?v=2ec138fc9b4bbb7a">
+  <script src="assets/motions.js?v=0987b4e6a2b74880" defer></script>
   <script src="assets/shitcoins.js?v=53c94a3ef9064da9" defer></script>
   <script src="music-loop.js?v=7203b60ec81fee57" defer></script>
-  <script src="i18n.js?v=269ea63eee5a7728" defer></script>
-  <script src="fighter.js?v=959d1281809b359d" defer></script>
+  <script src="i18n.js?v=11d4859a5ceb5598" defer></script>
+  <script src="fighter.js?v=164c788799ec9e1f" defer></script>
 </head>
 <body data-phase="loading" data-combo-tier="0">
   <main class="game-app">
@@ -55,6 +55,7 @@
             <div class="hud-best"><span class="hud-label" data-i18n="ui.best">РЕКОРД</span><strong id="best">0</strong><span class="best-caption" data-i18n="ui.personalBest">ТВОЯ ПЛАНКА</span></div>
           </div>
           <div id="combat-callout" class="combat-callout" aria-live="polite" aria-atomic="true"></div>
+          <div id="trade-notice" class="trade-notice" role="status" aria-live="polite" aria-atomic="true" hidden><strong id="trade-notice-title"></strong><span id="trade-notice-caption"></span></div>
           <div id="combo-banner" class="combo-banner" aria-live="polite" aria-atomic="true"><span class="combo-banner-line" aria-hidden="true"></span><strong id="combo-banner-title"></strong><span class="combo-banner-line" aria-hidden="true"></span></div>
           <div class="overlay" id="overlay">
             <div class="menu-card">

@@ -42,15 +42,20 @@ Small coins require punch/palm attacks; red heavy coins require kick/jump-kick a
 
 The perfect-hit callout is `NO FOMO` in every language. The 25-hit title expresses resisting the shill and is translated with the rest of the interface.
 
-Each missed wave adds its actual coin to `sim.portfolio` in arrival order. Three coins end the round. The same variants feed the HUD and loss-screen portfolio; restarting resets both.
+Each missed wave adds its actual coin to `sim.portfolio` in arrival order. Three currently held coins end the round. The same variants feed the HUD and loss-screen portfolio; restarting resets both.
+
+The first purchase (three lives to two) shows a fixed investing excuse; the second (two lives to one) randomly selects one of two excuses. Both use the localized `purchased` callout. The third purchase proceeds directly to the loss screen.
+
+Crossing into the purple 50-hit tier with a nonempty portfolio triggers stop loss: remove the latest portfolio coin and restore one life. This can happen once per fresh streak, after which damage must reset the streak before another 50-hit crossing can recover a coin. The trigger is the 50-hit tier, independent of the score multiplier: 40 hits already award ×2.00, while 50 hits award ×2.25. An empty portfolio does not gain an extra life.
 
 ## 4. Browser controller and presentation
 
 - `requestMove()` connects keyboard and pointer input to `sim.action()`.
 - `start()` and `pause()` coordinate round state, overlays, effects and audio.
-- `consumeEvents()` turns simulation events into hit stops, flashes, particles, reflected coins, capture animations, semantic callouts, combo accents and sound.
+- `consumeEvents()` turns simulation events into hit stops, flashes, particles, reflected coins, capture animations, localized purchase excuses, stop-loss recovery feedback, semantic callouts, combo accents and sound.
+- `showTradeNotice()` keeps purchase excuses and the stop-loss confirmation visible independently of subsequent hit callouts; `#trade-notice` updates immediately when the language changes. Purchase sounds use a short synthesized click and confirmation chime.
 - `updateHUD()` translates and updates score, combo, charge, action help, portfolio ARIA labels and menu/loss text. `updateGameoverPortfolio()` builds the three loss-screen logos from the real portfolio and updates their localized accessibility labels without recreating unchanged images.
-- `getMotionFrame()` chooses neutral/attack/recovery sprite frames; `drawCharacter()` mirrors attacks for the selected side.
+- `getMotionFrame()` follows the simulation's neutral/attack/recovery pose; `drawCharacter()` mirrors attacks for the selected side. On the last life, the fighter enters a kung-fu guard through `guardEnter`; `guardExit` lowers the hands within the next move's existing anticipation, preserving contact timing.
 - `drawBackground()`, `drawPlatform()`, `drawHitZones()`, `drawShitcoin()`, `drawTelegraphs()`, `drawImpacts()` and `drawCaptures()` draw the arena and effects.
 - `render(dt)` draws a frame. `tick(timestamp)` advances the simulation in fixed steps, honors contact freezes and schedules the next animation frame.
 - `ready` waits for required sprite atlases and coin logos; asset failures remain visible in the interface.
@@ -92,13 +97,13 @@ The dictionary contains Russian (`ru`), English (`en`) and Simplified Chinese (`
 
 After an intentional atlas edit, run `python fighter/tools/refresh-assets.py`. It reads the current PNGs, updates hashes/cache versions and previews, and verifies that atlas bytes remain unchanged. `prepare-fighter.py` is the historical extraction/build path and protects manually edited atlases; do not use its destructive rebuild option without explicit authorization.
 
-## 8. Music and generated sound
+## 8. Music and sound effects
 
 `fighter/music-loop.js` contains `ZYGMusicLoop`. `play()` fetches/decodes the WAV once, starts a continuously looping Web Audio buffer and handles volume/mute gain. `pause()` preserves playback position. `_playFallback()` uses HTML Audio for direct file opening or failed Web Audio loading; epoch checks prevent stale asynchronous playback from restarting paused music.
 
 `tools/prepare-music-loop.py` creates the circular PCM track from the preserved original, with a smooth, correlation-compensated overlap of about 1.67 seconds. Do not repeatedly process the already blended output.
 
-The fighter's `tone()`, `noise()`, `sound()`, `coinSound()` and `comboAccent()` synthesize attack, impact, coin and milestone sounds with Web Audio. `unlockAudio()` starts/resumes the audio context after player interaction.
+The optional `ZYG_SOUNDS` manifest maps named effects to audio files; `playFile()` checks those first. The fighter's `tone()`, `noise()`, `sound()`, `coinSound()` and `comboAccent()` provide Web Audio synthesis for fallback effects, coin sounds and milestone accents. `unlockAudio()` starts/resumes the audio context after player interaction.
 
 ## 9. Local tools and verification
 

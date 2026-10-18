@@ -30,9 +30,23 @@
     return specs;
   }
 
+  function sampleMotion(manifest, name, time, offset = 0) {
+    const motion = manifest.motions && (manifest.motions[name] || (name === 'palm' && manifest.motions.palms));
+    if (!motion || !motion.frames || !motion.frames.length) return null;
+    let index = offset + Math.floor(Math.max(0, time) * (motion.fps || 24) + 1e-8);
+    if (motion.loop === 'pingpong') {
+      const period = Math.max(1, motion.frames.length * 2 - 2);
+      index %= period;
+      if (index >= motion.frames.length) index = period - index;
+    } else if (motion.loop) index %= motion.frames.length;
+    else index = Math.min(motion.frames.length - 1, index);
+    return { name, index, frameId: motion.frames[index] };
+  }
+
   class FighterSimulation {
     constructor(options = {}) {
       this.random = options.random || Math.random;
+      this.manifest = options.manifest || {};
       this.logoCount = options.logoCount || (root.ZYG_SHITCOINS || []).length || 1;
       this.specs = motionSpecs(options.manifest);
       this.best = options.best || 0;
@@ -42,13 +56,49 @@
     }
     reset() {
       Object.assign(this, { elapsed: 0, score: 0, lives: 3, combo: 0, difficulty: 1, portfolio: [],
-        direction: 1, attack: null, recovery: 0, breakCharge: 0, breakCooldown: 0, queued: null,
+        direction: 1, attack: null, recovery: 0, neutralSince: 0, guardAt: null, breakCharge: 0, breakCooldown: 0, queued: null,
         nextWave: 1.1, nextId: 1, waveId: 0, objects: [], damagedWaves: new Set(), events: [] });
     }
     get breakReady() { return this.breakCharge >= 100; }
     get multiplier() { return Math.min(3, 1 + Math.floor(this.combo / 10) * .25); }
     get comboTier() { return this.combo >= 50 ? 3 : this.combo >= 25 ? 2 : this.combo >= 10 ? 1 : 0; }
     get comboTitle() { return ['', 'НЕ ПОКУПАЮ', 'НЕ ПОДДАЛСЯ НА SHILL', 'ПОРТФЕЛЬ ЧИСТ'][this.comboTier]; }
+    get pose() { return this.getPose(); }
+    getPose(time = this.elapsed) {
+      const motions = this.manifest.motions || {}, neutral = this.manifest.neutralFrame;
+      if (this.attack) {
+        const a = this.attack;
+        if (a.t < a.startup) {
+          const index = Math.min(a.leadIn.length - 1, Math.floor(a.t * a.leadInFps + 1e-8));
+          return { name: 'guardExit', index, frameId: a.leadIn[index] };
+        }
+        // Fit the guard exit into the existing anticipation. The strike reaches
+        // its contact frame at the same time as an attack from ordinary idle.
+        const motionTime = a.startup > 0 && a.t < a.windup
+          ? (a.t - a.startup) * a.windup / (a.windup - a.startup) : a.t;
+        return sampleMotion(this.manifest, a.move, motionTime);
+      }
+      const enter = motions.guardEnter;
+      if (this.lives === 1 && this.guardAt !== null && time >= this.guardAt && enter && motions.stance) {
+        const guardTime = time - this.guardAt, duration = enter.frames.length / enter.fps;
+        return guardTime < duration ? sampleMotion(this.manifest, 'guardEnter', guardTime)
+          : sampleMotion(this.manifest, 'stance', guardTime - duration);
+      }
+      const idle = motions.idle;
+      if (!idle) return null;
+      // Every strike ends here. Continue down the reverse branch of the idle
+      // bounce, instead of jumping to a pose selected by the round's clock.
+      const offset = Math.max(0, idle.frames.indexOf(neutral));
+      return sampleMotion(this.manifest, 'idle', Math.max(0, time - this.neutralSince - RECOVERY_SECONDS), offset);
+    }
+    scheduleGuard() {
+      const idle = this.manifest.motions && this.manifest.motions.idle;
+      if (!idle || this.attack) return;
+      const origin = this.neutralSince + RECOVERY_SECONDS;
+      const period = Math.max(1, idle.frames.length * 2 - 2) / (idle.fps || 24);
+      // Finish the current idle bounce before raising the hands.
+      this.guardAt = origin + Math.ceil(Math.max(0, this.elapsed - origin) / period - 1e-8) * period;
+    }
     start() { this.reset(); this.phase = 'playing'; this.emit('start'); }
     emit(kind, data = {}) { this.events.push({ kind, ...data }); }
     setPaused(paused) {
@@ -65,9 +115,24 @@
         if (queue && !this.attack && this.recovery <= RECOVERY_SECONDS) this.queued = { move, side };
         return false;
       }
+      const pose = this.pose, motions = this.manifest.motions || {};
+      let leadIn = [], leadInFps = 32;
+      if (pose && pose.name === 'stance' && motions.guardExit) {
+        leadIn = [pose.frameId, ...motions.guardExit.frames.slice(1)];
+        leadInFps = motions.guardExit.fps;
+      } else if (pose && pose.name === 'guardEnter' && pose.index > 0) {
+        // If input arrives while the hands are rising, lower them from the
+        // current pose rather than completing an unnecessary guard cycle.
+        leadIn = motions.guardEnter.frames.slice(0, pose.index + 1).reverse();
+        leadInFps = motions.guardExit ? motions.guardExit.fps : motions.guardEnter.fps;
+      }
+      const windup = this.specs[move].windows[0][0];
+      const startup = Math.min(leadIn.length / leadInFps, windup * .5);
+      if (startup > 0) leadInFps = leadIn.length / startup;
       side = side < 0 ? -1 : 1;
       if (move !== 'break') this.direction = side;
-      this.attack = { move, side, t: 0, hitIds: new Set(), clangIds: new Set(), hadHit: false, sounded: false };
+      this.attack = { move, side, t: 0, startup, windup, leadIn, leadInFps,
+        hitIds: new Set(), clangIds: new Set(), hadHit: false, sounded: false };
       this.queued = null;
       if (move === 'break') this.breakCharge = 0;
       this.emit('attack', { move, side });
@@ -143,11 +208,22 @@
             if (this.combo === 10 || this.combo === 25 || this.combo === 50) {
               this.emit('comboMilestone', { combo: this.combo, tier: this.comboTier, title: this.comboTitle, textKey: 'combo.' + this.comboTier, multiplier });
             }
+            // Purple is earned once per uninterrupted streak. Sell only the
+            // latest unwanted coin; later hits in the same streak cannot heal.
+            if (this.combo === 50 && this.portfolio.length) {
+              const slot = this.portfolio.length - 1, removed = this.portfolio.pop();
+              this.lives = 3 - this.portfolio.length;
+              this.guardAt = null;
+              this.emit('stopLoss', { object: { ...removed }, slot, lives: this.lives, portfolioCount: this.portfolio.length });
+            }
           }
         }
         if (a.t >= spec.duration) {
           if (!a.hadHit) this.emit('whiff', { move: a.move });
-          this.recovery = Math.max(0, RECOVERY_SECONDS - (a.t - spec.duration));
+          const overshoot = a.t - spec.duration;
+          this.recovery = Math.max(0, RECOVERY_SECONDS - overshoot);
+          this.neutralSince = this.elapsed - overshoot;
+          this.guardAt = this.lives === 1 ? this.neutralSince + RECOVERY_SECONDS : null;
           this.attack = null;
         }
       } else if (this.recovery > 0) {
@@ -162,8 +238,10 @@
         object.dead = true;
         if (!this.damagedWaves.has(object.wave)) {
           this.damagedWaves.add(object.wave); this.lives = Math.max(0, this.lives - 1); this.combo = 0;
+          if (this.lives === 1) this.scheduleGuard();
           this.portfolio.push({ ...object });
-          this.emit('damage', { object: { ...object }, lives: this.lives, portfolio: this.portfolio.map(coin => ({ ...coin })) });
+          this.emit('damage', { object: { ...object }, lives: this.lives, remainingLives: this.lives,
+            purchaseNumber: this.portfolio.length, portfolio: this.portfolio.map(coin => ({ ...coin })) });
           if (this.lives <= 0) {
             this.phase = 'gameover'; this.attack = null; this.queued = null;
             this.emit('gameover', { score: this.score, best: this.best, portfolio: this.portfolio.map(coin => ({ ...coin })) });
@@ -183,7 +261,9 @@
         recovery: this.recovery, breakCooldown: this.breakCooldown, breakCharge: this.breakCharge, breakReady: this.breakReady,
         combo: this.combo, multiplier: this.multiplier, comboTier: this.comboTier, comboTitle: this.comboTitle,
         portfolio: this.portfolio.map(coin => ({ ...coin })),
-        attack: this.attack && { move: this.attack.move, side: this.attack.side, t: this.attack.t, duration: this.specs[this.attack.move].duration },
+        pose: this.pose,
+        attack: this.attack && { move: this.attack.move, side: this.attack.side, t: this.attack.t,
+          startup: this.attack.startup, duration: this.specs[this.attack.move].duration },
         objects: this.objects.map(({ id, side, type, distance, speed, wave, variant, diameter, angle, spin }) => ({ id, side, type, distance, speed, wave, variant, diameter, angle, spin })) };
     }
   }
@@ -207,6 +287,8 @@
   let background = null, renderFrames = 0, shake = 0, damageFlash = 0, inputPulse = 0;
   let last = 0, accumulator = 0, visualTime = 0, audioContext = null, sfxGain = null;
   let statusMessage = null, calloutMessage = null, comboBannerMessage = null;
+  let tradeTitleMessage = null, tradeCaptionMessage = null, tradeUntil = 0;
+  let clearedSlot = -1, clearedSlotUntil = 0;
   let statusUntil = 0, loadingDone = 0, spriteError = false, logoError = false;
   let hitStop = 0, calloutUntil = 0, comboBannerUntil = 0, breakFlash = 0, hitStopCount = 0;
   const tierColors = ['#95ffda', '#e4f58b', '#7ce8ef', '#e8a2ff'];
@@ -259,6 +341,13 @@
       tone(leg ? 58 : 850, leg ? 27 : 260, leg ? .23 : .045, leg ? .32 : .08, leg ? 'sine' : 'square');
     }
     else if (kind === 'clang') { tone(760, 480, .28, .16, 'square'); tone(1130, 690, .2, .09, 'triangle'); }
+    else if (kind === 'purchase') {
+      const pitch = move === 'final' ? .68 : 1;
+      noise(.012, .12, 4800);
+      tone(1750, 1400, .018, .055, 'square');
+      tone(1046 * pitch, 1046 * pitch, .14, .20, 'triangle', .025);
+      tone(1568 * pitch, 1568 * pitch, .23, .15, 'sine', .075);
+    }
     else if (kind === 'damage') { noise(.30, .50, 1300); tone(160, 30, .38, .5, 'sawtooth'); }
     else if (kind === 'wave') { tone(390, 520, .07, .05, 'sine'); noise(.1, .055, 4000); }
     else if (kind === 'gameover') { [180, 145, 95].forEach((f, i) => tone(f, f * .75, .35, .22, 'triangle', i * .13)); }
@@ -289,12 +378,16 @@
     'dynamic.intro': 'Мелкие — руками. Красные — ногами. Не покупай.', 'dynamic.keepCombo': 'ДЕРЖИ СЕРИЮ',
     'dynamic.portfolioAria': 'Портфель: {count} из 3. Третья монета завершает раунд.',
     'dynamic.portfolioCount': '{count} / 3', 'dynamic.slotFilled': 'Слот {slot}: {name}', 'dynamic.slotEmpty': 'Слот {slot}: пусто',
-    'dynamic.breakReady': 'ГОТОВ', 'dynamic.breakPercent': '{charge}%', 'dynamic.recovery': 'БОЕВАЯ СТОЙКА · {seconds} С',
+    'dynamic.breakReady': 'ГОТОВ', 'dynamic.breakPercent': '{charge}%', 'dynamic.recovery': 'ВОЗВРАТ В НЕЙТРАЛЬ · {seconds} С',
+    'dynamic.guard': 'КУНГ-ФУ СТОЙКА · ПОСЛЕДНЯЯ ЖИЗНЬ', 'dynamic.guardExit': 'ВЫХОД ИЗ СТОЙКИ',
     'dynamic.neutral': 'НЕЙТРАЛЬ · ГОТОВ К УДАРУ', 'dynamic.queued': 'ПРИЁМ В ОЧЕРЕДИ', 'dynamic.idle': 'ЛОВИ МОМЕНТ. ДЕРЖИ ЦЕНТР.',
     'dynamic.unmute': 'Включить звук (M)', 'dynamic.mute': 'Выключить звук (M)', 'dynamic.resumeAria': 'Продолжить (Esc)', 'dynamic.pauseAria': 'Пауза (Esc)',
     'dynamic.loadingTitle': 'СОБИРАЕМ БОЙЦА', 'dynamic.loadingCopy': 'Готовим спрайты и ставим музыку на повтор.',
     'dynamic.pausedTitle': 'Перекур.', 'dynamic.pausedCopy': 'Enter или Esc — продолжить.',
     'dynamic.gameoverTitle': 'Ты стал exit liquidity',
+    'dynamic.purchased': 'КУПЛЕНО', 'dynamic.purchaseFirst': 'Поверил в технологии',
+    'dynamic.purchaseSecondA': 'Точно взлетит!', 'dynamic.purchaseSecondB': 'Это инвестиция в долгую',
+    'dynamic.stopLoss': 'Сработал stop loss',
     'dynamic.bagholder': 'Теперь ты бегхолдер.', 'dynamic.retryQuestion': 'Пробуем без покупок?',
     'dynamic.gameoverScore': 'Очки: {score}', 'dynamic.gameoverScoreLabel': 'ТВОИ ОЧКИ',
     'dynamic.gameoverPortfolioAria': 'Купленные Shitcoins: {count} из 3.',
@@ -320,6 +413,12 @@
   function translated(descriptor) { return descriptor ? t(descriptor.key, descriptor.params) : ''; }
   function setText(id, value) { const node = $(id); if (node && node.textContent !== String(value)) node.textContent = value; }
   function announce(key, duration = 1.5, params = {}) { statusMessage = message(key, params); statusUntil = visualTime + duration; }
+  function showTradeNotice(kind, titleKey, captionKey = null, duration = 1.4) {
+    tradeTitleMessage = message(titleKey);
+    tradeCaptionMessage = captionKey ? message(captionKey) : null;
+    tradeUntil = visualTime + duration;
+    const notice = $('trade-notice'); if (notice) notice.dataset.kind = kind;
+  }
   function save() { try { localStorage.setItem('zyg-junkfu-best', String(sim.best)); savedBest = sim.best; } catch (_) {} }
   function setMute(value) {
     muted = value; music.muted = muted;
@@ -333,6 +432,7 @@
     unlockAudio(); sim.start(); particles.length = floaters.length = reflected.length = impacts.length = captures.length = 0;
     accumulator = shake = hitStop = breakFlash = calloutUntil = comboBannerUntil = hitStopCount = 0;
     statusMessage = calloutMessage = comboBannerMessage = null;
+    tradeTitleMessage = tradeCaptionMessage = null; tradeUntil = clearedSlotUntil = 0; clearedSlot = -1;
     announce('dynamic.intro', 4.5); updateHUD();
   }
   function pause(value) {
@@ -448,6 +548,7 @@
         const coin = sim.portfolio[index], entry = coin && coinManifest[coin.variant];
         const capturing = captures.some(c => c.slot === index && c.life > 0);
         slot.classList.toggle('is-filled', !!coin); slot.classList.toggle('is-capturing', capturing);
+        slot.classList.toggle('is-cleared', index === clearedSlot && visualTime < clearedSlotUntil);
         const icon = slot.querySelector('svg'); if (icon) icon.style.display = coin ? 'none' : '';
         let img = slot.querySelector('img');
         if (entry) {
@@ -465,7 +566,10 @@
     const chargeFill = $('break-charge-fill'); if (chargeFill) chargeFill.style.width = sim.breakCharge + '%';
     const fill = $('recovery-fill');
     if (fill) fill.style.width = sim.attack ? '100%' : (sim.recovery / RECOVERY_SECONDS * 100) + '%';
-    const attack = sim.attack, note = attack ? t('moves.' + attack.move) : sim.recovery > 0 ? t('dynamic.recovery', { seconds: number(sim.recovery, { minimumFractionDigits: 1, maximumFractionDigits: 1 }) }) : t('dynamic.neutral');
+    const attack = sim.attack, pose = sim.pose;
+    const note = attack ? t(pose && pose.name === 'guardExit' ? 'dynamic.guardExit' : 'moves.' + attack.move)
+      : sim.recovery > 0 ? t('dynamic.recovery', { seconds: number(sim.recovery, { minimumFractionDigits: 1, maximumFractionDigits: 1 }) })
+      : t(pose && (pose.name === 'stance' || pose.name === 'guardEnter') ? 'dynamic.guard' : 'dynamic.neutral');
     setText('action-note', note);
     setText('status', visualTime < statusUntil ? translated(statusMessage) : t(sim.phase === 'loading' ? 'dynamic.loadingSprites' : sim.queued ? 'dynamic.queued' : 'dynamic.idle'));
     const muteButton = $('mute-button');
@@ -478,7 +582,12 @@
     });
     setText('combat-callout', translated(calloutMessage));
     setText('combo-banner-title', translated(comboBannerMessage));
-    const callout = $('combat-callout'); if (callout) callout.classList.toggle('is-visible', visualTime < calloutUntil && ['playing', 'paused'].includes(sim.phase));
+    const tradeVisible = visualTime < tradeUntil && ['playing', 'paused'].includes(sim.phase);
+    const notice = $('trade-notice'); if (notice) notice.hidden = !tradeVisible;
+    setText('trade-notice-title', translated(tradeTitleMessage));
+    setText('trade-notice-caption', translated(tradeCaptionMessage));
+    const caption = $('trade-notice-caption'); if (caption) caption.hidden = !tradeCaptionMessage;
+    const callout = $('combat-callout'); if (callout) callout.classList.toggle('is-visible', !tradeVisible && visualTime < calloutUntil && ['playing', 'paused'].includes(sim.phase));
     const banner = $('combo-banner'); if (banner) banner.classList.toggle('is-visible', visualTime < comboBannerUntil && ['playing', 'paused'].includes(sim.phase));
     if (sim.phase === 'loading') { setText('overlay-title', t('dynamic.loadingTitle')); setText('overlay-copy', t('dynamic.loadingCopy')); }
     else if (sim.phase === 'paused') { setText('overlay-title', t('dynamic.pausedTitle')); setText('overlay-copy', t('dynamic.pausedCopy')); }
@@ -531,7 +640,7 @@
   }
   function consumeEvents() {
     for (const e of sim.events.splice(0)) {
-      if (e.kind === 'attack' && e.move === 'break') {
+      if (e.kind === 'swing' && e.move === 'break') {
         sound('super'); breakFlash = .72;
         impacts.push({ kind: 'break', x: CX, y: FEET - 95, life: .85, max: .85, color: '#d4a0ff', side: 1, power: 1 });
         spawnParticles(CX, FEET - 100, '#d4a0ff', 42, 1.8);
@@ -554,11 +663,24 @@
       if (e.kind === 'comboMilestone') { showCombo(e.textKey || 'combo.' + e.tier, e.tier); comboAccent(e.tier); }
       if (e.kind === 'clang') { const p = objectPoint(e.object); sound('clang'); spawnParticles(p.x, p.y, '#ff755d', 8, .6); announce(e.textKey || (e.object.type === 'heavy' ? 'dynamic.clangHeavy' : 'dynamic.clangLight'), 1.5); floaters.push({ x: p.x, y: p.y - 48, message: message('dynamic.clang'), color: '#ff816a', life: .75 }); }
       if (e.kind === 'damage') {
-        sound('damage'); shake = 12; damageFlash = .35; comboBannerUntil = calloutUntil = 0;
+        sound('purchase', e.lives === 0 ? 'final' : undefined); shake = 12; damageFlash = .35; comboBannerUntil = calloutUntil = 0;
+        clearedSlot = -1; clearedSlotUntil = 0;
         spawnParticles(CX + e.object.side * 50, FEET - 140, '#ff705d', 25);
         const point = objectPoint(e.object);
         captures.push({ ...e.object, fromX: point.x, fromY: point.y, slot: 2 - e.lives, life: .52, max: .52 });
         announce('dynamic.bought', 2, { count: 3 - e.lives });
+        if (e.lives > 0) {
+          const captionKey = e.lives === 2 ? 'dynamic.purchaseFirst'
+            : Math.random() < .5 ? 'dynamic.purchaseSecondA' : 'dynamic.purchaseSecondB';
+          showTradeNotice('purchase', 'dynamic.purchased', captionKey);
+        } else { tradeUntil = 0; tradeTitleMessage = tradeCaptionMessage = null; }
+      }
+      if (e.kind === 'stopLoss') {
+        for (let i = captures.length - 1; i >= 0; i--) if (captures[i].id === e.object.id) captures.splice(i, 1);
+        clearedSlot = e.slot; clearedSlotUntil = visualTime + .85;
+        showTradeNotice('stop-loss', 'dynamic.stopLoss', null, 1.8);
+        announce('dynamic.stopLoss', 1.8);
+        spawnParticles(CX, FEET - 180, '#e8a2ff', 28, 1.2);
       }
       if (e.kind === 'wave') sound('wave');
       if (e.kind === 'gameover') { sound('gameover'); save(); music.pause(); }
@@ -650,21 +772,11 @@
     }
     ctx.restore();
   }
-  function getMotionFrame() {
-    const name = sim.attack ? sim.attack.move : sim.recovery > 0 ? 'stance' : 'idle';
-    const motion = manifest.motions && (manifest.motions[name] || (name === 'palm' && manifest.motions.palms) || manifest.motions.idle);
-    if (!motion || !motion.frames || !motion.frames.length) return null;
-    const clock = sim.attack ? sim.attack.t : sim.recovery > 0 ? RECOVERY_SECONDS - sim.recovery : sim.elapsed || visualTime;
-    let index = Math.floor(clock * (motion.fps || 24));
-    if (sim.attack) index = Math.min(motion.frames.length - 1, index);
-    else if (motion.loop === 'pingpong') { const period = Math.max(1, motion.frames.length * 2 - 2); index %= period; if (index >= motion.frames.length) index = period - index; }
-    else index %= motion.frames.length;
-    return (manifest.frames || [])[motion.frames[index]];
-  }
   function drawCharacter() {
     ctx.save();
     ctx.fillStyle = '#07110b72'; ctx.beginPath(); ctx.ellipse(CX, FEET + 5, 67, 10, 0, 0, Math.PI * 2); ctx.fill();
-    if (sim.attack && sim.attack.t >= sim.specs[sim.attack.move].start && sim.attack.t <= sim.specs[sim.attack.move].end) {
+    const attackTime = sim.attack && sim.attack.t;
+    if (sim.attack && sim.specs[sim.attack.move].windows.some(([start, end]) => attackTime >= start && attackTime < end)) {
       const side = sim.attack.side, both = sim.attack.move === 'break', tier = sim.comboTier;
       const color = both ? '#d4a0ff' : tier > 0 ? tierColors[tier] : sim.specs[sim.attack.move].type === 'light' ? '#a4ffe0' : '#ff5367';
       ctx.globalAlpha = .48; ctx.strokeStyle = color; ctx.lineWidth = both ? 12 : 8 + tier * 3; ctx.shadowColor = color; ctx.shadowBlur = 15 + tier * 7;
@@ -676,9 +788,10 @@
       }
       ctx.shadowBlur = 0; ctx.globalAlpha = 1;
     }
-    const frame = getMotionFrame();
+    const pose = sim.getPose(sim.phase === 'menu' || sim.phase === 'loading' ? visualTime : sim.elapsed);
+    const frame = pose && (manifest.frames || [])[pose.frameId];
     if (frame && atlases[frame.atlas]) {
-      const activeMotion = manifest.motions && manifest.motions[sim.attack ? sim.attack.move : sim.recovery > 0 ? 'stance' : 'idle'];
+      const activeMotion = manifest.motions && manifest.motions[pose.name];
       const scale = (manifest.displayScale || .88), facing = activeMotion && activeMotion.baseFacing || manifest.baseFacing || manifest.defaultFacing || 1;
       ctx.translate(CX, FEET); ctx.scale(sim.direction * facing, 1);
       ctx.drawImage(atlases[frame.atlas], frame.x, frame.y, frame.w, frame.h,
