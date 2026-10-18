@@ -284,7 +284,7 @@
   sim.phase = 'loading';
   const coinManifest = root.ZYG_SHITCOINS || [];
   const coinImages = [], atlases = [], particles = [], floaters = [], reflected = [], impacts = [], captures = [];
-  let background = null, renderFrames = 0, shake = 0, damageFlash = 0, inputPulse = 0;
+  let background = null, renderFrames = 0, shake = 0, damageFlash = 0;
   let last = 0, accumulator = 0, visualTime = 0, audioContext = null, sfxGain = null;
   let statusMessage = null, calloutMessage = null, comboBannerMessage = null;
   let tradeTitleMessage = null, tradeCaptionMessage = null, tradeUntil = 0;
@@ -419,7 +419,7 @@
     tradeUntil = visualTime + duration;
     const notice = $('trade-notice'); if (notice) notice.dataset.kind = kind;
   }
-  function save() { try { localStorage.setItem('zyg-junkfu-best', String(sim.best)); savedBest = sim.best; } catch (_) {} }
+  function save() { savedBest = sim.best; try { localStorage.setItem('zyg-junkfu-best', String(sim.best)); } catch (_) {} }
   function setMute(value) {
     muted = value; music.muted = muted;
     if (sfxGain) sfxGain.gain.value = muted ? 0 : .48;
@@ -430,7 +430,7 @@
   function start() {
     if (sim.phase === 'loading') return;
     unlockAudio(); sim.start(); particles.length = floaters.length = reflected.length = impacts.length = captures.length = 0;
-    accumulator = shake = hitStop = breakFlash = calloutUntil = comboBannerUntil = hitStopCount = 0;
+    accumulator = shake = damageFlash = hitStop = breakFlash = calloutUntil = comboBannerUntil = hitStopCount = 0;
     statusMessage = calloutMessage = comboBannerMessage = null;
     tradeTitleMessage = tradeCaptionMessage = null; tradeUntil = clearedSlotUntil = 0; clearedSlot = -1;
     announce('dynamic.intro', 4.5); updateHUD();
@@ -449,7 +449,6 @@
           button.classList.add('is-active'); button.setAttribute('aria-pressed', 'true'); setTimeout(() => { button.classList.remove('is-active'); button.setAttribute('aria-pressed', 'false'); }, 160);
         }
       });
-      inputPulse = .25;
     }
   }
   const keys = {
@@ -458,7 +457,7 @@
   };
   root.addEventListener('keydown', event => {
     if (event.target && /INPUT|TEXTAREA|SELECT/.test(event.target.tagName)) return;
-    if (event.target && event.target.closest && event.target.closest('button[data-language]') && ['Enter', 'Space'].includes(event.code)) return;
+    if (event.target && event.target.closest && event.target.closest('button') && ['Enter', 'Space'].includes(event.code)) return;
     if (keys[event.code] || ['Enter', 'Escape', 'KeyM'].includes(event.code)) event.preventDefault();
     if (event.repeat) return;
     if (event.code === 'KeyM') { setMute(!muted); return; }
@@ -857,7 +856,7 @@
     }
   }
   function render(dt) {
-    renderFrames++; visualTime += dt; shake = Math.max(0, shake - dt * 30); damageFlash = Math.max(0, damageFlash - dt); inputPulse = Math.max(0, inputPulse - dt); breakFlash = Math.max(0, breakFlash - dt);
+    renderFrames++; visualTime += dt; shake = Math.max(0, shake - dt * 30); damageFlash = Math.max(0, damageFlash - dt); breakFlash = Math.max(0, breakFlash - dt);
     ctx.save(); if (shake > 0 && sim.phase !== 'paused') ctx.translate((Math.random() - .5) * shake, (Math.random() - .5) * shake * .5);
     drawBackground(visualTime); drawPlatform(); drawHitZones(visualTime);
     sim.objects.forEach(o => { const p = objectPoint(o); drawShitcoin(o, p.x, p.y); });

@@ -6,7 +6,7 @@ A kung-fu score attack arcade game: defend both sides of the platform, time each
 
 **[Play in your browser](https://azkian1.github.io/zyg-shitcoins/?lang=en)**
 
-[Project map](project.md) — file responsibilities, game systems and release workflow.
+[Project map](project.md) — source files, game structure and maintenance.
 
 ![Zygote vs Shitcoins gameplay with the English interface](docs/screenshots/gameplay-en.png)
 
@@ -32,11 +32,11 @@ The first two purchases flash **BOUGHT** with a familiar investing excuse. Fill 
 
 On-screen buttons support mouse and touch. Keyboard controls use physical key positions, so they also work with non-English keyboard layouts.
 
-Every attack returns to the relaxed, bouncing neutral pose. On your last life, Zygote raises a kung-fu guard instead. The hands lower through neutral before the next strike, within its existing windup, so hit timing stays the same.
+Every attack returns to the relaxed, bouncing neutral pose. On your last life, Zygote raises a kung-fu guard instead.
 
 ## Build your streak
 
-Successful hits charge **Break**: a regular hit adds **9%**, a perfect hit adds **16%**. When the button lights up, unleash a circular sweep that clears coins on both sides—or save it for a tougher moment.
+Successful hits charge **Break**: a regular hit adds **9%**, a perfect hit adds **16%**. When the button lights up, unleash a circular sweep that clears nearby coins on both sides—or save it for a tougher moment.
 
 Reach **10, 25 and 50 consecutive hits** to unlock new combo titles, brighter attack trails and musical accents. The streak counter and score multiplier are shown separately. Brief hit stops, contact flashes and directional shockwaves make every deflection feel sharp; kicks have heavier sound and knockback.
 
@@ -51,3 +51,5 @@ Choose **RU**, **ENG** or **中文** on the start screen or during a round. The 
 Download or clone this repository and open `index.html` in a modern browser. You can also serve the repository folder with any static web server.
 
 The game runs in the browser without a backend. Sprites, coin logos, music, custom SVG icons and fonts are bundled. Sound starts after you interact with the game. Russo One and Golos Text are distributed under the SIL Open Font License; their license texts are included in `assets/fonts/`.
+
+For the included local server, run `node tools/serve.mjs` from this repository and open **http://127.0.0.1:8798/**. No build or dependency installation is needed to play.

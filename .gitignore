@@ -1,0 +1,13 @@
+# Generated QA output belongs outside the repository in ../work/qa/.
+# Ignore accidental local derivatives without excluding maintenance tools.
+/work/
+/review/
+/assets/motion-preview-*.png
+/node_modules/
+/test-results/
+/playwright-report/
+__pycache__/
+*.py[cod]
+*.log
+Thumbs.db
+.DS_Store
